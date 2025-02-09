@@ -42,6 +42,17 @@ class SheetsService {
   }
 
   /**
+   * 金額文字列をパースする
+   * @param {string} value 金額文字列（例: "¥1,234" or "1234"）
+   * @returns {number} パースした金額、失敗時はNaN
+   */
+  parseAmount(value) {
+    if (!value) return NaN;
+    const numStr = value.toString().replace(/[¥,]/g, '');
+    return parseInt(numStr, 10);
+  }
+
+  /**
    * 年月文字列をシート名に変換する
    * @param {string} yearMonth YYYY-MM形式の年月
    * @returns {string} YYYY_MM形式のシート名
@@ -242,16 +253,24 @@ class SheetsService {
       ]);
 
       const values = entriesResponse.data.values || [];
-      const entries = values.filter(row => row[0] && row[1]);
-      const total = totalResponse.data.values?.[0]?.[0] 
-        ? parseInt(totalResponse.data.values[0][0], 10)
-        : entries.reduce((sum, row) => sum + parseInt(row[1], 10), 0);
+      const entries = values
+        .filter(row => row[0] && row[1])
+        .map(row => ({
+          date: row[0],
+          amount: this.parseAmount(row[1])
+        }))
+        .filter(entry => !isNaN(entry.amount));
+
+      // C27から合計金額を取得、取得できない場合は明細から計算
+      const total = totalResponse.data.values?.[0]?.[0]
+        ? this.parseAmount(totalResponse.data.values[0][0])
+        : entries.reduce((sum, entry) => sum + entry.amount, 0);
 
       return {
         yearMonth,
         count: entries.length,
-        total,
-        lastUpdate: entries.length > 0 ? entries[entries.length - 1][0] : null,
+        total: isNaN(total) ? 0 : total,
+        lastUpdate: entries.length > 0 ? entries[entries.length - 1].date : null,
         sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheet.sheetId}`
       };
     } catch (error) {
@@ -296,19 +315,20 @@ class SheetsService {
         .filter(row => row[0] && row[1])
         .map(row => ({
           date: row[0],
-          amount: parseInt(row[1].replace(/[¥,]/g, ''), 10),
+          amount: this.parseAmount(row[1]),
           details: row[2] || '（内容なし）'
         }))
-        .filter(entry => !isNaN(entry.amount));  // 無効な金額を除外
+        .filter(entry => !isNaN(entry.amount));
 
+      // C27から合計金額を取得、取得できない場合は明細から計算
       const total = totalResponse.data.values?.[0]?.[0]
-        ? parseInt(totalResponse.data.values[0][0].replace(/[¥,]/g, ''), 10)
+        ? this.parseAmount(totalResponse.data.values[0][0])
         : entries.reduce((sum, entry) => sum + entry.amount, 0);
 
       return {
         yearMonth,
         entries,
-        total,
+        total: isNaN(total) ? 0 : total,
         sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheet.sheetId}`
       };
     } catch (error) {
