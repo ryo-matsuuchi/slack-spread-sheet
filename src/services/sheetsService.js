@@ -229,15 +229,23 @@ class SheetsService {
       // シートの存在確認
       const sheet = await this.getOrCreateSheet(userId, yearMonth);
 
-      // データを取得
-      const response = await this.sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: `${sheet.title}!B2:C26`
-      });
+      // データを取得（合計金額を含む）
+      const [entriesResponse, totalResponse] = await Promise.all([
+        this.sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: `${sheet.title}!B2:C26`
+        }),
+        this.sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: `${sheet.title}!C27`
+        })
+      ]);
 
-      const values = response.data.values || [];
+      const values = entriesResponse.data.values || [];
       const entries = values.filter(row => row[0] && row[1]);
-      const total = entries.reduce((sum, row) => sum + parseInt(row[1], 10), 0);
+      const total = totalResponse.data.values?.[0]?.[0] 
+        ? parseInt(totalResponse.data.values[0][0], 10)
+        : entries.reduce((sum, row) => sum + parseInt(row[1], 10), 0);
 
       return {
         yearMonth,
@@ -271,24 +279,36 @@ class SheetsService {
       const sheet = await this.getOrCreateSheet(userId, yearMonth);
       debugLog(`Using sheet: ${sheet.title}`);
 
-      // データを取得
-      const response = await this.sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: `${sheet.title}!B2:D26`
-      });
+      // データを取得（明細と合計金額）
+      const [entriesResponse, totalResponse] = await Promise.all([
+        this.sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: `${sheet.title}!B2:D26`
+        }),
+        this.sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: `${sheet.title}!C27`
+        })
+      ]);
 
-      const values = response.data.values || [];
+      const values = entriesResponse.data.values || [];
       const entries = values
         .filter(row => row[0] && row[1])
         .map(row => ({
           date: row[0],
-          amount: parseInt(row[1], 10),
+          amount: parseInt(row[1].replace(/[¥,]/g, ''), 10),
           details: row[2] || '（内容なし）'
-        }));
+        }))
+        .filter(entry => !isNaN(entry.amount));  // 無効な金額を除外
+
+      const total = totalResponse.data.values?.[0]?.[0]
+        ? parseInt(totalResponse.data.values[0][0].replace(/[¥,]/g, ''), 10)
+        : entries.reduce((sum, entry) => sum + entry.amount, 0);
 
       return {
         yearMonth,
         entries,
+        total,
         sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheet.sheetId}`
       };
     } catch (error) {
