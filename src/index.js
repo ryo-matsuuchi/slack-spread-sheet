@@ -37,7 +37,19 @@ let isServerReady = false;
 // レシーバーの初期化
 const receiver = new ExpressReceiver({
   signingSecret: config.slack.signingSecret,
-  processBeforeResponse: true
+  processBeforeResponse: true,
+  endpoints: '/slack/events'  // エンドポイントを明示的に指定
+});
+
+// リクエストのデバッグログ
+receiver.app.use((req, res, next) => {
+  console.log('[DEBUG] Incoming request:', {
+    method: req.method,
+    path: req.path,
+    headers: req.headers,
+    body: req.body
+  });
+  next();
 });
 
 // Expressアプリの取得
@@ -46,7 +58,8 @@ const expressApp = receiver.app;
 // Slack Boltアプリの初期化
 const app = new App({
   token: config.slack.botToken,
-  receiver
+  receiver,
+  processBeforeResponse: true
 });
 
 // ヘルスチェックエンドポイント
