@@ -42,6 +42,24 @@ class SheetsService {
   }
 
   /**
+   * 年月文字列をシート名に変換する
+   * @param {string} yearMonth YYYY-MM形式の年月
+   * @returns {string} YYYY_MM形式のシート名
+   */
+  formatSheetName(yearMonth) {
+    return yearMonth.replace('-', '_');
+  }
+
+  /**
+   * シート名を年月文字列に変換する
+   * @param {string} sheetName YYYY_MM形式のシート名
+   * @returns {string} YYYY-MM形式の年月
+   */
+  parseSheetName(sheetName) {
+    return sheetName.replace('_', '-');
+  }
+
+  /**
    * 月次シートを取得または作成する
    * @param {string} userId ユーザーID
    * @param {string} yearMonth YYYY-MM形式の年月
@@ -49,7 +67,8 @@ class SheetsService {
    */
   async getOrCreateSheet(userId, yearMonth) {
     try {
-      debugLog(`Getting/Creating sheet for ${userId}, ${yearMonth}`);
+      const sheetName = this.formatSheetName(yearMonth);
+      debugLog(`Getting/Creating sheet for ${userId}, ${yearMonth} (sheet name: ${sheetName})`);
       const spreadsheetId = await settingsService.getSpreadsheetId(userId);
 
       // スプレッドシート情報を取得
@@ -60,10 +79,10 @@ class SheetsService {
 
       // 既存のシートを検索
       const sheets = response.data.sheets;
-      const sheet = sheets.find(s => s.properties.title === yearMonth);
+      const sheet = sheets.find(s => s.properties.title === sheetName);
 
       if (sheet) {
-        debugLog(`Found existing sheet: ${yearMonth}`);
+        debugLog(`Found existing sheet: ${sheetName}`);
         return {
           sheetId: sheet.properties.sheetId,
           title: sheet.properties.title
@@ -84,19 +103,19 @@ class SheetsService {
             duplicateSheet: {
               sourceSheetId: baseSheet.properties.sheetId,
               insertSheetIndex: sheets.length,
-              newSheetName: yearMonth
+              newSheetName: sheetName
             }
           }]
         }
       });
 
       const newSheet = result.data.replies[0].duplicateSheet;
-      debugLog(`Created new sheet: ${yearMonth}`);
+      debugLog(`Created new sheet: ${sheetName}`);
 
       // 初日を設定
       await this.sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${yearMonth}!D3`,
+        range: `${sheetName}!D3`,
         valueInputOption: 'USER_ENTERED',
         resource: {
           values: [[`${yearMonth}-01`]]
