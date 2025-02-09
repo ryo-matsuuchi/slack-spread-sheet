@@ -17,6 +17,13 @@ const errorLog = (message, error) => {
   }
 };
 
+// 環境変数のデバッグ出力
+console.log('[DEBUG] Environment variables:', {
+  PORT: process.env.PORT,
+  PROJECT_DOMAIN: process.env.PROJECT_DOMAIN,
+  NODE_ENV: process.env.NODE_ENV
+});
+
 // 一時ディレクトリの作成
 const tmpDir = path.join(__dirname, '..', 'tmp');
 if (!fs.existsSync(tmpDir)) {
@@ -70,7 +77,7 @@ process.on('uncaughtException', (error) => {
     // サービスの初期化
     await slackService.initialize(app);
 
-    // アプリの起動
+    // アプリの起動（Glitchのポートを使用）
     const port = process.env.PORT || 3000;
     await receiver.start(port);
     console.log(`⚡️ Server is running on port ${port}!`);
@@ -80,7 +87,6 @@ process.on('uncaughtException', (error) => {
 
     // デバッグ情報の出力
     debugLog('App configuration:', {
-      socketMode: false,
       port: port,
       env: process.env.NODE_ENV,
       botToken: config.slack.botToken ? 'Set' : 'Not set',
