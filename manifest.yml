@@ -18,6 +18,7 @@ features:
       description: 経費精算書を作成します
   slash_commands:
     - command: /keihi
+      url: https://slack2keihi.glitch.me/slack/events
       description: 経費精算書を作成・管理します
       usage_hint: |
         setup [スプレッドシートID] - スプレッドシートを設定
@@ -47,6 +48,7 @@ oauth_config:
 
 settings:
   event_subscriptions:
+    request_url: https://slack2keihi.glitch.me/slack/events
     bot_events:
       - app_mention
       - message.im
