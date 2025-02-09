@@ -1,6 +1,5 @@
 const { google } = require('googleapis');
-const path = require('path');
-const { Readable } = require('stream');
+const settingsService = require('./settingsService');
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -14,6 +13,15 @@ const errorLog = (message, error) => {
     console.error(error.stack);
   }
 };
+
+class DriveError extends Error {
+  constructor(message, userId, operation) {
+    super(message);
+    this.name = 'DriveError';
+    this.userId = userId;
+    this.operation = operation;
+  }
+}
 
 class DriveService {
   constructor() {
@@ -33,40 +41,14 @@ class DriveService {
   }
 
   /**
-   * ユーザーのメールアドレスを取得する
-   * @param {string} userId SlackのユーザーID
-   * @returns {Promise<string>} メールアドレス
-   */
-  async getUserEmail(userId) {
-    try {
-      // SlackのWeb APIクライアントを初期化
-      const { WebClient } = require('@slack/web-api');
-      const slack = new WebClient(process.env.SLACK_BOT_TOKEN);
-
-      // ユーザー情報を取得
-      const result = await slack.users.info({
-        user: userId
-      });
-
-      if (!result.ok || !result.user.profile.email) {
-        throw new Error('Failed to get user email');
-      }
-
-      return result.user.profile.email;
-    } catch (error) {
-      errorLog('Get user email error:', error);
-      throw new Error('ユーザーのメールアドレス取得に失敗しました');
-    }
-  }
-
-  /**
    * フォルダを作成または取得する
+   * @param {string} userId ユーザーID
    * @param {string} name フォルダ名
    * @param {string} parentId 親フォルダID
-   * @param {string} [userEmail] ユーザーのメールアドレス（ユーザーフォルダの場合のみ）
+   * @param {boolean} [setPermission=false] 権限を設定するかどうか
    * @returns {Promise<string>} フォルダID
    */
-  async ensureFolder(name, parentId, userEmail = null) {
+  async ensureFolder(userId, name, parentId, setPermission = false) {
     try {
       debugLog(`Ensuring folder: ${name} in ${parentId}`);
 
@@ -101,8 +83,10 @@ class DriveService {
       debugLog(`Created new folder: ${folderId}`);
 
       // ユーザーフォルダの場合、アクセス権限を設定
-      if (userEmail) {
+      if (setPermission) {
+        const userEmail = await settingsService.getUserEmail(userId);
         debugLog(`Setting permission for user: ${userEmail}`);
+        
         await this.drive.permissions.create({
           fileId: folderId,
           requestBody: {
@@ -116,7 +100,11 @@ class DriveService {
       return folderId;
     } catch (error) {
       errorLog('Ensure folder error:', error);
-      throw new Error(`フォルダの作成に失敗しました: ${name}`);
+      throw new DriveError(
+        `フォルダの作成に失敗しました: ${name}`,
+        userId,
+        'ensureFolder'
+      );
     }
   }
 
@@ -133,14 +121,21 @@ class DriveService {
     try {
       debugLog(`Uploading file: ${fileName} for user: ${userId} in: ${yearMonth}`);
 
-      // ユーザーのメールアドレスを取得
-      const userEmail = await this.getUserEmail(userId);
-
       // ユーザーフォルダを作成または取得（メールアドレスでの権限設定付き）
-      const userFolderId = await this.ensureFolder(userId, this.rootFolderId, userEmail);
+      const userFolderId = await this.ensureFolder(
+        userId,
+        userId,
+        this.rootFolderId,
+        true // ユーザーフォルダには権限を設定
+      );
 
       // 年月フォルダを作成または取得
-      const yearMonthFolderId = await this.ensureFolder(yearMonth, userFolderId);
+      const yearMonthFolderId = await this.ensureFolder(
+        userId,
+        yearMonth,
+        userFolderId,
+        false // 年月フォルダは親から権限を継承
+      );
 
       // ファイルをアップロード
       const fileMetadata = {
@@ -148,19 +143,14 @@ class DriveService {
         parents: [yearMonthFolderId],
       };
 
-      // Bufferからストリームを作成
-      const stream = new Readable();
-      stream.push(content);
-      stream.push(null);
-
       const media = {
         mimeType: mimeType,
-        body: stream,
+        body: content,
       };
 
       debugLog('Creating file in Drive');
       const file = await this.drive.files.create({
-        requestBody: fileMetadata,
+        resource: fileMetadata,
         media: media,
         fields: 'id, webViewLink',
       });
@@ -172,7 +162,11 @@ class DriveService {
       };
     } catch (error) {
       errorLog('Upload file error:', error);
-      throw new Error('ファイルのアップロードに失敗しました');
+      throw new DriveError(
+        'ファイルのアップロードに失敗しました。',
+        userId,
+        'uploadFile'
+      );
     }
   }
 }

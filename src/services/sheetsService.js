@@ -1,5 +1,27 @@
 const { google } = require('googleapis');
-const path = require('path');
+const settingsService = require('./settingsService');
+
+// デバッグログの設定
+const debugLog = (message, ...args) => {
+  console.log(`[DEBUG] ${message}`, ...args);
+};
+
+// エラーログの設定
+const errorLog = (message, error) => {
+  console.error(`[ERROR] ${message}`, error);
+  if (error.stack) {
+    console.error(error.stack);
+  }
+};
+
+class SheetsError extends Error {
+  constructor(message, userId, operation) {
+    super(message);
+    this.name = 'SheetsError';
+    this.userId = userId;
+    this.operation = operation;
+  }
+}
 
 class SheetsService {
   constructor() {
@@ -11,237 +33,245 @@ class SheetsService {
       ['https://www.googleapis.com/auth/spreadsheets']
     );
     this.sheets = google.sheets({ version: 'v4', auth: this.auth });
-    this.spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
-
-    if (!this.spreadsheetId) {
-      throw new Error('GOOGLE_SPREADSHEET_ID environment variable is required');
-    }
   }
 
   /**
-   * シート名を生成する
+   * 月次シートを取得または作成する
+   * @param {string} userId ユーザーID
    * @param {string} yearMonth YYYY-MM形式の年月
-   * @returns {string} シート名（例：2025_02）
+   * @returns {Promise<{sheetId: string, title: string}>} シート情報
    */
-  getSheetName(yearMonth) {
-    const [year, month] = yearMonth.split('-');
-    return `${year}_${month.padStart(2, '0')}`;
-  }
-
-  /**
-   * 対象月の初日を生成する
-   * @param {string} yearMonth YYYY-MM形式の年月
-   * @returns {string} YYYY/MM/DD形式の日付
-   */
-  getFirstDayOfMonth(yearMonth) {
-    const [year, month] = yearMonth.split('-');
-    return `${year}/${month.padStart(2, '0')}/01`;
-  }
-
-  /**
-   * シートを取得または作成する
-   * @param {string} sheetName シート名
-   * @returns {Promise<{sheetId: string, sheetUrl: string}>} シート情報
-   */
-  async ensureSheet(sheetName) {
+  async getOrCreateSheet(userId, yearMonth) {
     try {
-      console.log(`Ensuring sheet exists: ${sheetName}`);
+      debugLog(`Getting/Creating sheet for ${userId}, ${yearMonth}`);
+      const spreadsheetId = await settingsService.getSpreadsheetId(userId);
 
-      // シート一覧を取得
+      // スプレッドシート情報を取得
       const response = await this.sheets.spreadsheets.get({
-        spreadsheetId: this.spreadsheetId,
+        spreadsheetId,
+        fields: 'sheets.properties'
       });
 
-      console.log('Retrieved spreadsheet info:', JSON.stringify(response.data, null, 2));
-
-      // 既存のシートを探す
-      const sheet = response.data.sheets.find(
-        s => s.properties.title === sheetName
-      );
+      // 既存のシートを検索
+      const sheets = response.data.sheets;
+      const sheet = sheets.find(s => s.properties.title === yearMonth);
 
       if (sheet) {
-        console.log(`Found existing sheet: ${sheetName}, ID: ${sheet.properties.sheetId}`);
+        debugLog(`Found existing sheet: ${yearMonth}`);
         return {
-          sheetId: sheet.properties.sheetId.toString(),
-          sheetUrl: `https://docs.google.com/spreadsheets/d/${this.spreadsheetId}/edit#gid=${sheet.properties.sheetId}`,
+          sheetId: sheet.properties.sheetId,
+          title: sheet.properties.title
         };
       }
 
-      // _baseシートを探す
-      const baseSheet = response.data.sheets.find(
-        s => s.properties.title === '_base'
-      );
-
+      // _baseシートを複製して新しいシートを作成
+      debugLog('Creating new sheet from _base');
+      const baseSheet = sheets.find(s => s.properties.title === '_base');
       if (!baseSheet) {
-        console.error('Base sheet not found');
-        throw new Error('_baseシートが見つかりません');
+        throw new SheetsError('_baseシートが見つかりません。', userId, 'getOrCreateSheet');
       }
 
-      console.log(`Found base sheet, ID: ${baseSheet.properties.sheetId}`);
-
-      // シートを複製
-      console.log(`Duplicating base sheet to create: ${sheetName}`);
       const result = await this.sheets.spreadsheets.batchUpdate({
-        spreadsheetId: this.spreadsheetId,
+        spreadsheetId,
         resource: {
-          requests: [
-            {
-              duplicateSheet: {
-                sourceSheetId: baseSheet.properties.sheetId,
-                insertSheetIndex: response.data.sheets.length,
-                newSheetName: sheetName,
-              },
-            },
-          ],
-        },
+          requests: [{
+            duplicateSheet: {
+              sourceSheetId: baseSheet.properties.sheetId,
+              insertSheetIndex: sheets.length,
+              newSheetName: yearMonth
+            }
+          }]
+        }
       });
 
-      console.log('Duplicate sheet result:', JSON.stringify(result.data, null, 2));
+      const newSheet = result.data.replies[0].duplicateSheet;
+      debugLog(`Created new sheet: ${yearMonth}`);
 
-      const newSheetId = result.data.replies[0].duplicateSheet.properties.sheetId.toString();
-      console.log(`Created new sheet: ${sheetName}, ID: ${newSheetId}`);
-
-      // 対象月の初日を設定
-      const yearMonth = sheetName.replace('_', '-');
-      const firstDay = this.getFirstDayOfMonth(yearMonth);
-      console.log(`Setting first day of month: ${firstDay} in cell D3`);
-
+      // 初日を設定
       await this.sheets.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!D3`,
+        spreadsheetId,
+        range: `${yearMonth}!D3`,
         valueInputOption: 'USER_ENTERED',
         resource: {
-          values: [[firstDay]],
-        },
+          values: [[`${yearMonth}-01`]]
+        }
       });
-
-      console.log('Successfully set first day of month');
 
       return {
-        sheetId: newSheetId,
-        sheetUrl: `https://docs.google.com/spreadsheets/d/${this.spreadsheetId}/edit#gid=${newSheetId}`,
+        sheetId: newSheet.sheetId,
+        title: newSheet.title
       };
     } catch (error) {
-      console.error('Ensure sheet error:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        response: error.response?.data,
-      });
-      throw new Error(`シートの作成に失敗しました: ${sheetName} (${error.message})`);
+      errorLog('Error in getOrCreateSheet:', error);
+      throw new SheetsError(
+        'シートの取得/作成に失敗しました。',
+        userId,
+        'getOrCreateSheet'
+      );
     }
   }
 
   /**
-   * 空の行を探す
-   * @param {string} sheetName シート名
-   * @returns {Promise<number>} 行番号（1から始まる）
+   * 空き行を検索する
+   * @param {string} spreadsheetId スプレッドシートID
+   * @param {string} sheetTitle シート名
+   * @returns {Promise<number>} 空き行の行番号
    */
-  async findEmptyRow(sheetName) {
-    try {
-      console.log(`Finding empty row in sheet: ${sheetName}`);
+  async findEmptyRow(spreadsheetId, sheetTitle) {
+    const response = await this.sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetTitle}!B2:E26`
+    });
 
-      // A2:E26の範囲を取得（Noを含む）
-      const response = await this.sheets.spreadsheets.values.get({
-        spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!A2:E26`,
-      });
-
-      const values = response.data.values || [];
-      console.log('Retrieved values:', JSON.stringify(values, null, 2));
-      
-      // B列〜E列がすべて空の行を探す（A列にNoが存在する行のみ）
-      for (let i = 0; i < values.length; i++) {
-        const row = values[i] || [];
-        if (row[0] && // A列（No）が存在する
-            (!row[1] && !row[2] && !row[3] && !row[4])) { // B〜E列がすべて空
-          const rowNumber = i + 2;
-          console.log(`Found empty row: ${rowNumber}`);
-          return rowNumber;
-        }
+    const values = response.data.values || [];
+    for (let i = 0; i < values.length; i++) {
+      const row = values[i];
+      if (!row || row.every(cell => !cell)) {
+        return i + 2;
       }
-
-      console.log('No empty row found');
-      return -1;
-    } catch (error) {
-      console.error('Find empty row error:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        response: error.response?.data,
-      });
-      throw new Error('空の行の検索に失敗しました');
     }
+
+    throw new Error('空き行がありません。');
   }
 
   /**
-   * 経費情報を追加する
-   * @param {Object} entry 経費情報
-   * @param {string} entry.userId ユーザーID
-   * @param {string} entry.date 日付（YYYY-MM-DD）
-   * @param {number} entry.amount 金額
-   * @param {string} entry.details 内容
-   * @param {string} entry.memo メモ
-   * @param {string} entry.fileUrl ファイルURL
-   * @returns {Promise<{success: boolean, message: string, sheetUrl: string}>} 処理結果
+   * エントリーを追加する
+   * @param {Object} params パラメータ
+   * @param {string} params.userId ユーザーID
+   * @param {string} params.date 日付（YYYY-MM-DD形式）
+   * @param {number} params.amount 金額
+   * @param {string} params.details 内容
+   * @param {string} params.memo メモ
+   * @param {string} [params.fileUrl] 領収書URL
+   * @returns {Promise<{success: boolean, message: string, sheetUrl: string}>}
    */
-  async addEntry(entry) {
+  async addEntry({ userId, date, amount, details, memo, fileUrl = '' }) {
     try {
-      console.log('Adding entry:', JSON.stringify(entry, null, 2));
+      debugLog(`Adding entry for user: ${userId}`);
+      const spreadsheetId = await settingsService.getSpreadsheetId(userId);
 
-      // シート名を生成（YYYY-MM-DDから年月を抽出）
-      const yearMonth = entry.date.substring(0, 7);
-      const sheetName = this.getSheetName(yearMonth);
-      console.log(`Generated sheet name: ${sheetName}`);
+      // 年月を取得（YYYY-MM）
+      const yearMonth = date.substring(0, 7);
 
       // シートを取得または作成
-      const sheetInfo = await this.ensureSheet(sheetName);
-      console.log('Sheet info:', JSON.stringify(sheetInfo, null, 2));
+      const sheet = await this.getOrCreateSheet(userId, yearMonth);
 
-      // 空の行を探す
-      const rowNumber = await this.findEmptyRow(sheetName);
-      console.log(`Found row number: ${rowNumber}`);
+      // 空き行を検索
+      const rowNumber = await this.findEmptyRow(spreadsheetId, sheet.title);
 
-      // 27行目以降の場合
-      if (rowNumber === -1) {
-        console.log('No empty row available');
-        return {
-          success: false,
-          message: '経費精算書の空き行がありません。新しいシートを作成してください。',
-          sheetUrl: sheetInfo.sheetUrl,
-        };
-      }
-
-      // データを更新（B列から入力）
-      console.log(`Updating data in row: ${rowNumber}`);
+      // データを追加
       await this.sheets.spreadsheets.values.update({
-        spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!B${rowNumber}:E${rowNumber}`,
+        spreadsheetId,
+        range: `${sheet.title}!B${rowNumber}:E${rowNumber}`,
         valueInputOption: 'USER_ENTERED',
         resource: {
           values: [[
-            entry.date,
-            entry.amount,
-            entry.details,
-            entry.fileUrl ? `${entry.memo || ''}\n${entry.fileUrl}` : (entry.memo || ''),
-          ]],
-        },
+            date,
+            amount,
+            details || '（内容なし）',
+            fileUrl ? `${memo || ''}\n${fileUrl}` : (memo || '')
+          ]]
+        }
       });
 
-      console.log('Successfully updated data');
+      debugLog('Entry added successfully');
       return {
         success: true,
-        message: '経費精算書に追加しました。',
-        sheetUrl: sheetInfo.sheetUrl,
+        message: '経費を登録しました。',
+        sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheet.sheetId}`
       };
     } catch (error) {
-      console.error('Add entry error:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        response: error.response?.data,
+      errorLog('Error adding entry:', error);
+      throw new SheetsError(
+        error.message || 'エントリーの追加に失敗しました。',
+        userId,
+        'addEntry'
+      );
+    }
+  }
+
+  /**
+   * ステータスを取得する
+   * @param {string} userId ユーザーID
+   * @param {string} yearMonth YYYY-MM形式の年月
+   * @returns {Promise<Object>} ステータス情報
+   */
+  async getStatus(userId, yearMonth) {
+    try {
+      debugLog(`Getting status for user: ${userId}, month: ${yearMonth}`);
+      const spreadsheetId = await settingsService.getSpreadsheetId(userId);
+
+      // シートの存在確認
+      const sheet = await this.getOrCreateSheet(userId, yearMonth);
+
+      // データを取得
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheet.title}!B2:C26`
       });
-      throw new Error('経費精算書への追加に失敗しました');
+
+      const values = response.data.values || [];
+      const entries = values.filter(row => row[0] && row[1]);
+      const total = entries.reduce((sum, row) => sum + parseInt(row[1], 10), 0);
+
+      return {
+        yearMonth,
+        count: entries.length,
+        total,
+        lastUpdate: entries.length > 0 ? entries[entries.length - 1][0] : null,
+        sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheet.sheetId}`
+      };
+    } catch (error) {
+      errorLog('Error getting status:', error);
+      throw new SheetsError(
+        'ステータスの取得に失敗しました。',
+        userId,
+        'getStatus'
+      );
+    }
+  }
+
+  /**
+   * 一覧を取得する
+   * @param {string} userId ユーザーID
+   * @param {string} yearMonth YYYY-MM形式の年月
+   * @returns {Promise<Object>} 一覧情報
+   */
+  async getList(userId, yearMonth) {
+    try {
+      debugLog(`Getting list for user: ${userId}, month: ${yearMonth}`);
+      const spreadsheetId = await settingsService.getSpreadsheetId(userId);
+
+      // シートの存在確認
+      const sheet = await this.getOrCreateSheet(userId, yearMonth);
+
+      // データを取得
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheet.title}!B2:D26`
+      });
+
+      const values = response.data.values || [];
+      const entries = values
+        .filter(row => row[0] && row[1])
+        .map(row => ({
+          date: row[0],
+          amount: parseInt(row[1], 10),
+          details: row[2] || '（内容なし）'
+        }));
+
+      return {
+        yearMonth,
+        entries,
+        sheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheet.sheetId}`
+      };
+    } catch (error) {
+      errorLog('Error getting list:', error);
+      throw new SheetsError(
+        '一覧の取得に失敗しました。',
+        userId,
+        'getList'
+      );
     }
   }
 }

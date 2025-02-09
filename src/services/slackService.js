@@ -1,6 +1,7 @@
 const config = require('../config/config');
 const sheetsService = require('./sheetsService');
 const driveService = require('./driveService');
+const settingsService = require('./settingsService');
 // const ocrService = require('./ocrService'); // OCR機能は一時的に無効化
 const axios = require('axios');
 
@@ -47,24 +48,6 @@ class SlackService {
     await this.initializeCommands();
     await this.initializeShortcuts();
     debugLog('SlackService initialized');
-  }
-
-  /**
-   * エラーメッセージを送信する
-   * @param {Object} client Slackクライアント
-   * @param {string} userId ユーザーID
-   * @param {Error} error エラーオブジェクト
-   */
-  async sendErrorMessage(client, userId, error) {
-    try {
-      errorLog('Error occurred:', error);
-      await client.chat.postMessage({
-        channel: userId,
-        text: `エラーが発生しました: ${error.message}\nもう一度お試しください。`,
-      });
-    } catch (sendError) {
-      errorLog('Failed to send error message:', sendError);
-    }
   }
 
   /**
@@ -170,45 +153,142 @@ class SlackService {
     } catch (error) {
       errorLog('Error opening modal:', error);
       if (options.userId) {
-        await this.sendErrorMessage(client, options.userId, error);
+        await client.chat.postMessage({
+          channel: options.userId,
+          text: `エラーが発生しました: ${error.message}\nもう一度お試しください。`,
+        });
       }
     }
   }
 
   async initializeCommands() {
     debugLog('Initializing commands');
+
     // /keihi コマンド
     this.app.command('/keihi', async ({ command, ack, client }) => {
-      try {
-        await ack();
-        debugLog('Handling /keihi command');
+      await ack();
+      debugLog('Handling /keihi command:', command);
 
-        await this.openExpenseModal(client, command.trigger_id, {
-          hasFile: false,
-          userId: command.user_id,
-          channelId: command.channel_id,
-        });
+      try {
+        const args = command.text.trim().split(/\s+/);
+        const subCommand = args[0] || 'add';
+
+        switch (subCommand) {
+          case 'setup':
+            // スプレッドシートID設定
+            const spreadsheetId = args[1];
+            if (!spreadsheetId) {
+              throw new Error('スプレッドシートIDを指定してください。');
+            }
+            if (!settingsService.isValidSpreadsheetId(spreadsheetId)) {
+              throw new Error('無効なスプレッドシートIDです。');
+            }
+
+            // メールアドレスを取得
+            const userInfo = await client.users.info({ user: command.user_id });
+            const email = userInfo.user.profile.email;
+
+            // 設定を保存
+            await settingsService.saveUserSettings(command.user_id, {
+              spreadsheet_id: spreadsheetId,
+              email: email
+            });
+
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: 'スプレッドシートの設定が完了しました。'
+            });
+            break;
+
+          case 'config':
+            // 設定確認
+            const settings = await settingsService.getUserSettings(command.user_id);
+            if (!settings) {
+              throw new Error('スプレッドシートが設定されていません。/keihi setup [スプレッドシートID] で設定してください。');
+            }
+
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: `現在の設定:\nスプレッドシートID: ${settings.spreadsheet_id}\nメールアドレス: ${settings.email}`
+            });
+            break;
+
+          case 'status':
+            // 登録状況確認
+            const statusYearMonth = args[1] || new Date().toISOString().substring(0, 7);
+            const status = await sheetsService.getStatus(command.user_id, statusYearMonth);
+
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: `${statusYearMonth}の登録状況:\n• 登録件数: ${status.count}件\n• 合計金額: ¥${status.total.toLocaleString()}\n• 最終更新: ${status.lastUpdate || 'なし'}\n\n<${status.sheetUrl}|スプレッドシートで開く>`
+            });
+            break;
+
+          case 'list':
+            // 登録一覧表示
+            const listYearMonth = args[1] || new Date().toISOString().substring(0, 7);
+            const list = await sheetsService.getList(command.user_id, listYearMonth);
+
+            const entries = list.entries.map(entry => 
+              `• ${entry.date}: ¥${entry.amount.toLocaleString()} - ${entry.details}`
+            ).join('\n');
+
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: `${listYearMonth}の登録一覧:\n${entries || 'データがありません'}\n\n<${list.sheetUrl}|スプレッドシートで開く>`
+            });
+            break;
+
+          case 'help':
+            // ヘルプ表示
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: `使用可能なコマンド:
+• /keihi setup [スプレッドシートID] - スプレッドシートを設定
+• /keihi config - 現在の設定を確認
+• /keihi - 経費を登録（直接入力）
+• /keihi status [YYYY-MM] - 登録状況を確認
+• /keihi list [YYYY-MM] - 登録一覧を表示
+• /keihi help - このヘルプを表示`
+            });
+            break;
+
+          case 'add':
+          default:
+            // 経費登録モーダルを表示
+            await this.openExpenseModal(client, command.trigger_id, {
+              hasFile: false,
+              userId: command.user_id,
+              channelId: command.channel_id,
+            });
+            break;
+        }
       } catch (error) {
-        errorLog('Error handling /keihi command:', error);
-        await this.sendErrorMessage(client, command.user_id, error);
+        errorLog('Error handling command:', error);
+        await client.chat.postMessage({
+          channel: command.user_id,
+          text: `エラーが発生しました: ${error.message}`
+        });
       }
     });
+
     debugLog('Commands initialized');
   }
 
   async initializeShortcuts() {
     debugLog('Initializing shortcuts');
+
     // メッセージショートカットの処理
     this.app.shortcut('create_expense_entry', async ({ shortcut, ack, client }) => {
+      await ack();
+      debugLog('Handling create_expense_entry shortcut');
+
       try {
-        await ack();
-        debugLog('Handling create_expense_entry shortcut');
         debugLog('Shortcut payload:', JSON.stringify(shortcut, null, 2));
 
         // メッセージの情報を取得
         const message = shortcut.message;
         if (!message.files || message.files.length === 0) {
-          debugLog('No files attached to message');
           throw new Error('このメッセージにはファイルが添付されていません。');
         }
 
@@ -228,16 +308,20 @@ class SlackService {
       } catch (error) {
         errorLog('Error handling shortcut:', error);
         if (shortcut.user && shortcut.user.id) {
-          await this.sendErrorMessage(client, shortcut.user.id, error);
+          await client.chat.postMessage({
+            channel: shortcut.user.id,
+            text: `エラーが発生しました: ${error.message}`
+          });
         }
       }
     });
 
     // ファイル添付ありのモーダル送信処理
     this.app.view('expense_modal', async ({ ack, body, view, client }) => {
+      await ack();
+      debugLog('Handling expense_modal submission');
+
       try {
-        await ack();
-        debugLog('Handling expense_modal submission');
         debugLog('View payload:', JSON.stringify(view, null, 2));
         debugLog('Body payload:', JSON.stringify(body, null, 2));
 
@@ -254,7 +338,6 @@ class SlackService {
 
         // 金額が未入力の場合はエラー
         if (!amount) {
-          debugLog('Amount is empty');
           throw new Error('金額を入力してください。');
         }
 
@@ -309,15 +392,19 @@ class SlackService {
       } catch (error) {
         errorLog('Error processing expense:', error);
         const metadata = JSON.parse(view.private_metadata);
-        await this.sendErrorMessage(client, metadata.userId, error);
+        await client.chat.postMessage({
+          channel: metadata.userId,
+          text: `エラーが発生しました: ${error.message}`
+        });
       }
     });
 
     // ファイル添付なしのモーダル送信処理
     this.app.view('expense_direct_modal', async ({ ack, body, view, client }) => {
+      await ack();
+      debugLog('Handling expense_direct_modal submission');
+
       try {
-        await ack();
-        debugLog('Handling expense_direct_modal submission');
         debugLog('View payload:', JSON.stringify(view, null, 2));
         debugLog('Body payload:', JSON.stringify(body, null, 2));
 
@@ -334,7 +421,6 @@ class SlackService {
 
         // 金額が未入力の場合はエラー
         if (!amount) {
-          debugLog('Amount is empty');
           throw new Error('金額を入力してください。');
         }
 
@@ -364,7 +450,10 @@ class SlackService {
       } catch (error) {
         errorLog('Error processing expense:', error);
         const metadata = JSON.parse(view.private_metadata);
-        await this.sendErrorMessage(client, metadata.userId, error);
+        await client.chat.postMessage({
+          channel: metadata.userId,
+          text: `エラーが発生しました: ${error.message}`
+        });
       }
     });
 
