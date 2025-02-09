@@ -2,6 +2,7 @@ const config = require('../config/config');
 const sheetsService = require('./sheetsService');
 const driveService = require('./driveService');
 const settingsService = require('./settingsService');
+const exportService = require('./exportService');
 const axios = require('axios');
 
 // デバッグログの設定
@@ -218,7 +219,7 @@ class SlackService {
                   type: 'section',
                   text: {
                     type: 'mrkdwn',
-                    text: '*使用可能なコマンド*\n• `/keihi setup [スプレッドシートID]` - スプレッドシートを設定\n• `/keihi config` - 現在の設定を確認\n• `/keihi` - 経費を登録（直接入力）\n• `/keihi status [YYYY-MM]` - 登録状況を確認\n• `/keihi list [YYYY-MM]` - 登録一覧を表示\n• `/keihi help` - このヘルプを表示'
+                    text: '*使用可能なコマンド*\n• `/keihi setup [スプレッドシートID]` - スプレッドシートを設定\n• `/keihi config` - 現在の設定を確認\n• `/keihi` - 経費を登録（直接入力）\n• `/keihi status [YYYY-MM]` - 登録状況を確認\n• `/keihi list [YYYY-MM]` - 登録一覧を表示\n• `/keihi export [YYYY-MM]` - 経費精算書をPDFに出力（領収書も含む）\n• `/keihi help` - このヘルプを表示'
                   }
                 },
                 {
@@ -308,7 +309,7 @@ class SlackService {
             const listYearMonth = args[0] || new Date().toISOString().substring(0, 7);
             const list = await sheetsService.getList(command.user_id, listYearMonth);
 
-            const entries = list.entries.map(entry => 
+            const entries = list.entries.map(entry =>
               `• ${entry.date}: ¥${entry.amount.toLocaleString()} - ${entry.details}`
             ).join('\n');
 
@@ -319,9 +320,36 @@ class SlackService {
             debugLog('List displayed');
             return;
 
+          case 'export':
+            debugLog('Processing export command');
+            const exportSettings = await settingsService.getUserSettings(command.user_id);
+            if (!exportSettings) {
+              throw new Error('スプレッドシートが設定されていません。/keihi setup [スプレッドシートID] で設定してください。');
+            }
+
+            // 年月の取得（指定がない場合は現在の年月）
+            const exportYearMonth = args[0] || new Date().toISOString().substring(0, 7);
+            
+            // 進捗メッセージを送信
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: `${exportYearMonth}の経費精算書をPDFに出力しています...`
+            });
+
+            // PDFの出力
+            const { fileUrl } = await exportService.exportExpenseReport(command.user_id, exportYearMonth);
+
+            // 完了メッセージを送信
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\n<${fileUrl}|PDFを開く>`
+            });
+            debugLog('Export completed');
+            return;
+
           default:
             // 無効なコマンドの場合はヘルプを表示
-            if (subCommand && subCommand !== 'add') {
+            if (subCommand && !['add', 'export'].includes(subCommand)) {
               debugLog('Invalid command received:', { subCommand });
               throw new Error('無効なコマンドです。`/keihi help`でヘルプを表示します。');
             }
