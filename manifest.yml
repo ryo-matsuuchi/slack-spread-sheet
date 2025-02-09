@@ -18,8 +18,13 @@ features:
       description: 経費精算書を作成します
   slash_commands:
     - command: /keihi
-      description: 経費精算書を作成します
-      usage_hint: 経費精算書を作成します
+      description: 経費精算書を作成・管理します
+      usage_hint: |
+        setup [スプレッドシートID] - スプレッドシートを設定
+        config - 現在の設定を確認
+        status [YYYY-MM] - 登録状況を確認
+        list [YYYY-MM] - 登録一覧を表示
+        help - ヘルプを表示
 
 oauth_config:
   scopes:
