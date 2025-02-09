@@ -243,13 +243,43 @@ class SlackService {
             // ヘルプ表示
             await client.chat.postMessage({
               channel: command.user_id,
-              text: `使用可能なコマンド:
-• /keihi setup [スプレッドシートID] - スプレッドシートを設定
-• /keihi config - 現在の設定を確認
-• /keihi - 経費を登録（直接入力）
-• /keihi status [YYYY-MM] - 登録状況を確認
-• /keihi list [YYYY-MM] - 登録一覧を表示
-• /keihi help - このヘルプを表示`
+              blocks: [
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*経費精算書作成ボットの使い方*'
+                  }
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*初期設定*\n1. 経費精算用のGoogleスプレッドシートを作成\n2. スプレッドシートに`_base`シートを作成（テンプレート用）\n3. アプリケーションのサービスアカウントに編集権限を付与\n4. `/keihi setup [スプレッドシートID]`を実行'
+                  }
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*使用可能なコマンド*\n• `/keihi setup [スプレッドシートID]` - スプレッドシートを設定\n• `/keihi config` - 現在の設定を確認\n• `/keihi` - 経費を登録（直接入力）\n• `/keihi status [YYYY-MM]` - 登録状況を確認\n• `/keihi list [YYYY-MM]` - 登録一覧を表示\n• `/keihi help` - このヘルプを表示'
+                  }
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*領収書添付での登録*\n1. Slackに領収書（PDFまたは画像）をアップロード\n2. メッセージの「その他のアクション」から「経費精算書の作成」を選択\n3. フォームに必要事項を入力して送信'
+                  }
+                },
+                {
+                  type: 'section',
+                  text: {
+                    type: 'mrkdwn',
+                    text: '*注意事項*\n• スプレッドシートには`_base`シートが必要です\n• アプリケーションに編集権限を付与してください\n• 領収書はユーザーごとにGoogle Driveで管理されます'
+                  }
+                }
+              ]
             });
             break;
 
