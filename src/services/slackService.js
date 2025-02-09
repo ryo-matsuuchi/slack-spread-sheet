@@ -2,7 +2,6 @@ const config = require('../config/config');
 const sheetsService = require('./sheetsService');
 const driveService = require('./driveService');
 const settingsService = require('./settingsService');
-// const ocrService = require('./ocrService'); // OCR機能は一時的に無効化
 const axios = require('axios');
 
 // デバッグログの設定
@@ -27,6 +26,14 @@ class SlackService {
     this.app = app;
     debugLog('Initializing SlackService');
 
+    // サーバー状態チェックミドルウェア
+    this.app.use(async ({ next }) => {
+      if (!this.app.isServerReady()) {
+        throw new Error('サーバーの準備が完了していません。しばらく待ってから再度お試しください。');
+      }
+      await next();
+    });
+
     // エラーハンドリング
     this.app.error(async (error) => {
       errorLog('Slack app error:', error);
@@ -50,12 +57,6 @@ class SlackService {
     debugLog('SlackService initialized');
   }
 
-  /**
-   * 経費入力用モーダルを表示する
-   * @param {Object} client Slackクライアント
-   * @param {string} triggerId トリガーID
-   * @param {Object} options オプション（ファイル情報など）
-   */
   async openExpenseModal(client, triggerId, options = {}) {
     try {
       debugLog('Opening expense modal with options:', options);
@@ -166,81 +167,36 @@ class SlackService {
 
     // /keihi コマンド
     this.app.command('/keihi', async ({ command, ack, client }) => {
+      debugLog('Received /keihi command:', { command_text: command.text, user_id: command.user_id });
       await ack();
-      debugLog('Handling /keihi command:', command);
 
       try {
-        const args = command.text.trim().split(/\s+/);
-        const subCommand = args[0] || 'add';
+        // サーバーの状態をチェック
+        if (!this.app.isServerReady()) {
+          throw new Error('サーバーが起動していません。しばらく待ってから再度お試しください。');
+        }
 
+        // コマンドテキストを解析
+        const text = command.text.trim();
+        let subCommand = '';
+        let args = [];
+
+        if (text) {
+          const parts = text.split(/\s+/);
+          subCommand = parts[0].toLowerCase();
+          args = parts.slice(1);
+          debugLog('Parsed command:', { text, subCommand, args });
+        } else {
+          debugLog('No command text provided, using default command');
+          subCommand = '';
+        }
+
+        debugLog('Processing command:', { subCommand, args, user_id: command.user_id });
+
+        // コマンドの処理
         switch (subCommand) {
-          case 'setup':
-            // スプレッドシートID設定
-            const spreadsheetId = args[1];
-            if (!spreadsheetId) {
-              throw new Error('スプレッドシートIDを指定してください。');
-            }
-            if (!settingsService.isValidSpreadsheetId(spreadsheetId)) {
-              throw new Error('無効なスプレッドシートIDです。');
-            }
-
-            // メールアドレスを取得
-            const userInfo = await client.users.info({ user: command.user_id });
-            const email = userInfo.user.profile.email;
-
-            // 設定を保存
-            await settingsService.saveUserSettings(command.user_id, {
-              spreadsheet_id: spreadsheetId,
-              email: email
-            });
-
-            await client.chat.postMessage({
-              channel: command.user_id,
-              text: 'スプレッドシートの設定が完了しました。'
-            });
-            break;
-
-          case 'config':
-            // 設定確認
-            const settings = await settingsService.getUserSettings(command.user_id);
-            if (!settings) {
-              throw new Error('スプレッドシートが設定されていません。/keihi setup [スプレッドシートID] で設定してください。');
-            }
-
-            await client.chat.postMessage({
-              channel: command.user_id,
-              text: `現在の設定:\nスプレッドシートID: ${settings.spreadsheet_id}\nメールアドレス: ${settings.email}`
-            });
-            break;
-
-          case 'status':
-            // 登録状況確認
-            const statusYearMonth = args[1] || new Date().toISOString().substring(0, 7);
-            const status = await sheetsService.getStatus(command.user_id, statusYearMonth);
-
-            await client.chat.postMessage({
-              channel: command.user_id,
-              text: `${statusYearMonth}の登録状況:\n• 登録件数: ${status.count}件\n• 合計金額: ¥${status.total.toLocaleString()}\n• 最終更新: ${status.lastUpdate || 'なし'}\n\n<${status.sheetUrl}|スプレッドシートで開く>`
-            });
-            break;
-
-          case 'list':
-            // 登録一覧表示
-            const listYearMonth = args[1] || new Date().toISOString().substring(0, 7);
-            const list = await sheetsService.getList(command.user_id, listYearMonth);
-
-            const entries = list.entries.map(entry => 
-              `• ${entry.date}: ¥${entry.amount.toLocaleString()} - ${entry.details}`
-            ).join('\n');
-
-            await client.chat.postMessage({
-              channel: command.user_id,
-              text: `${listYearMonth}の登録一覧:\n${entries || 'データがありません'}\n\n<${list.sheetUrl}|スプレッドシートで開く>`
-            });
-            break;
-
           case 'help':
-            // ヘルプ表示
+            debugLog('Processing help command');
             await client.chat.postMessage({
               channel: command.user_id,
               blocks: [
@@ -281,17 +237,104 @@ class SlackService {
                 }
               ]
             });
-            break;
+            debugLog('Help message sent');
+            return;
 
-          case 'add':
+          case 'setup':
+            debugLog('Processing setup command');
+            const spreadsheetId = args[0];
+            if (!spreadsheetId) {
+              throw new Error('スプレッドシートIDを指定してください。\n使用例: `/keihi setup [スプレッドシートID]`');
+            }
+            if (!settingsService.isValidSpreadsheetId(spreadsheetId)) {
+              throw new Error('無効なスプレッドシートIDです。');
+            }
+
+            // メールアドレスを取得
+            const userInfo = await client.users.info({ user: command.user_id });
+            const email = userInfo.user.profile.email;
+
+            // 設定を保存
+            await settingsService.saveUserSettings(command.user_id, {
+              spreadsheet_id: spreadsheetId,
+              email: email
+            });
+
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: 'スプレッドシートの設定が完了しました。'
+            });
+            debugLog('Setup completed');
+            return;
+
+          case 'config':
+            debugLog('Processing config command');
+            const settings = await settingsService.getUserSettings(command.user_id);
+            if (!settings) {
+              throw new Error('スプレッドシートが設定されていません。/keihi setup [スプレッドシートID] で設定してください。');
+            }
+
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: `現在の設定:\nスプレッドシートID: ${settings.spreadsheet_id}\nメールアドレス: ${settings.email}`
+            });
+            debugLog('Config displayed');
+            return;
+
+          case 'status':
+            debugLog('Processing status command');
+            const statusSettings = await settingsService.getUserSettings(command.user_id);
+            if (!statusSettings) {
+              throw new Error('スプレッドシートが設定されていません。/keihi setup [スプレッドシートID] で設定してください。');
+            }
+
+            const statusYearMonth = args[0] || new Date().toISOString().substring(0, 7);
+            const status = await sheetsService.getStatus(command.user_id, statusYearMonth);
+
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: `${statusYearMonth}の登録状況:\n• 登録件数: ${status.count}件\n• 合計金額: ¥${status.total.toLocaleString()}\n• 最終更新: ${status.lastUpdate || 'なし'}\n\n<${status.sheetUrl}|スプレッドシートで開く>`
+            });
+            debugLog('Status displayed');
+            return;
+
+          case 'list':
+            debugLog('Processing list command');
+            const listSettings = await settingsService.getUserSettings(command.user_id);
+            if (!listSettings) {
+              throw new Error('スプレッドシートが設定されていません。/keihi setup [スプレッドシートID] で設定してください。');
+            }
+
+            const listYearMonth = args[0] || new Date().toISOString().substring(0, 7);
+            const list = await sheetsService.getList(command.user_id, listYearMonth);
+
+            const entries = list.entries.map(entry => 
+              `• ${entry.date}: ¥${entry.amount.toLocaleString()} - ${entry.details}`
+            ).join('\n');
+
+            await client.chat.postMessage({
+              channel: command.user_id,
+              text: `${listYearMonth}の登録一覧:\n${entries || 'データがありません'}\n\n<${list.sheetUrl}|スプレッドシートで開く>`
+            });
+            debugLog('List displayed');
+            return;
+
           default:
-            // 経費登録モーダルを表示
+            // 無効なコマンドの場合はヘルプを表示
+            if (subCommand && subCommand !== 'add') {
+              debugLog('Invalid command received:', { subCommand });
+              throw new Error('無効なコマンドです。`/keihi help`でヘルプを表示します。');
+            }
+
+            // デフォルトの処理（直接入力）
+            debugLog('Opening expense modal for direct input');
             await this.openExpenseModal(client, command.trigger_id, {
               hasFile: false,
               userId: command.user_id,
               channelId: command.channel_id,
             });
-            break;
+            debugLog('Modal opened');
+            return;
         }
       } catch (error) {
         errorLog('Error handling command:', error);
@@ -314,6 +357,11 @@ class SlackService {
       debugLog('Handling create_expense_entry shortcut');
 
       try {
+        // サーバーの状態をチェック
+        if (!this.app.isServerReady()) {
+          throw new Error('サーバーが起動していません。しばらく待ってから再度お試しください。');
+        }
+
         debugLog('Shortcut payload:', JSON.stringify(shortcut, null, 2));
 
         // メッセージの情報を取得
@@ -352,6 +400,11 @@ class SlackService {
       debugLog('Handling expense_modal submission');
 
       try {
+        // サーバーの状態をチェック
+        if (!this.app.isServerReady()) {
+          throw new Error('サーバーが起動していません。しばらく待ってから再度お試しください。');
+        }
+
         debugLog('View payload:', JSON.stringify(view, null, 2));
         debugLog('Body payload:', JSON.stringify(body, null, 2));
 
@@ -435,6 +488,11 @@ class SlackService {
       debugLog('Handling expense_direct_modal submission');
 
       try {
+        // サーバーの状態をチェック
+        if (!this.app.isServerReady()) {
+          throw new Error('サーバーが起動していません。しばらく待ってから再度お試しください。');
+        }
+
         debugLog('View payload:', JSON.stringify(view, null, 2));
         debugLog('Body payload:', JSON.stringify(body, null, 2));
 

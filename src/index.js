@@ -1,4 +1,4 @@
-const { App } = require('@slack/bolt');
+const { App, ExpressReceiver } = require('@slack/bolt');
 const config = require('./config/config');
 const slackService = require('./services/slackService');
 const fs = require('fs');
@@ -24,13 +24,36 @@ if (!fs.existsSync(tmpDir)) {
   console.log('Temporary directory created:', tmpDir);
 }
 
+// サーバー状態の管理
+let isServerReady = false;
+
+// レシーバーの初期化
+const receiver = new ExpressReceiver({
+  signingSecret: config.slack.signingSecret,
+  processBeforeResponse: true
+});
+
+// Expressアプリの取得
+const expressApp = receiver.app;
+
 // Slack Boltアプリの初期化
 const app = new App({
   token: config.slack.botToken,
-  signingSecret: config.slack.signingSecret,
-  socketMode: true,
-  appToken: config.slack.appToken,
+  receiver
 });
+
+// ヘルスチェックエンドポイント
+expressApp.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    ready: isServerReady,
+    timestamp: new Date().toISOString(),
+    env: process.env.NODE_ENV
+  });
+});
+
+// サーバー状態を公開
+app.isServerReady = () => isServerReady;
 
 // グローバルエラーハンドリング
 process.on('unhandledRejection', (error) => {
@@ -48,16 +71,30 @@ process.on('uncaughtException', (error) => {
     await slackService.initialize(app);
 
     // アプリの起動
-    await app.start();
-    console.log('⚡️ Slack Bolt app is running!');
+    const port = process.env.PORT || 3000;
+    await receiver.start(port);
+    console.log(`⚡️ Server is running on port ${port}!`);
+    
+    // サーバーの準備完了を設定
+    isServerReady = true;
 
     // デバッグ情報の出力
     debugLog('App configuration:', {
-      socketMode: true,
+      socketMode: false,
+      port: port,
+      env: process.env.NODE_ENV,
       botToken: config.slack.botToken ? 'Set' : 'Not set',
-      signingSecret: config.slack.signingSecret ? 'Set' : 'Not set',
-      appToken: config.slack.appToken ? 'Set' : 'Not set',
+      signingSecret: config.slack.signingSecret ? 'Set' : 'Not set'
     });
+
+    // Slack接続の確認
+    app.client.auth.test()
+      .then(response => {
+        debugLog('Successfully connected to Slack:', response);
+      })
+      .catch(error => {
+        errorLog('Failed to connect to Slack:', error);
+      });
   } catch (error) {
     errorLog('Error starting app:', error);
     process.exit(1);
