@@ -13,10 +13,9 @@ module.exports = {
   },
 
   google: {
-    credentials: process.env.PROJECT_DOMAIN 
-      ? '/app/google-credentials.json'  // Glitch環境
-      : process.env.GOOGLE_APPLICATION_CREDENTIALS,  // ローカル環境
-    project: process.env.GOOGLE_CLOUD_PROJECT,
+    projectId: process.env.GOOGLE_CLOUD_PROJECT,
+    clientEmail: process.env.GOOGLE_CLIENT_EMAIL,
+    privateKey: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
     spreadsheetTemplateId: process.env.SPREADSHEET_TEMPLATE_ID,
     domain: process.env.GOOGLE_WORKSPACE_DOMAIN,
     scopes: [

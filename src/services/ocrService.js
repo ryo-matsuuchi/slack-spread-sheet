@@ -4,9 +4,16 @@ const fileManager = require('../utils/fileManager');
 
 class OCRService {
   constructor() {
+    if (!config.google.clientEmail || !config.google.privateKey) {
+      throw new Error('GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables are required');
+    }
+
     this.client = new vision.ImageAnnotatorClient({
+      credentials: {
+        client_email: config.google.clientEmail,
+        private_key: config.google.privateKey,
+      },
       projectId: config.google.projectId,
-      keyFilename: config.google.credentials,
     });
   }
 
