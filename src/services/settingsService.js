@@ -182,7 +182,10 @@ class SettingsService {
    * @returns {boolean} 有効な形式かどうか
    */
   isValidSpreadsheetId(spreadsheetId) {
-    return /^[a-zA-Z0-9-_]{43}$/.test(spreadsheetId);
+    // スプレッドシートIDの形式を検証
+    // - 英数字、ハイフン、アンダースコアのみを含む
+    // - 最低20文字以上
+    return /^[a-zA-Z0-9-_]{20,}$/.test(spreadsheetId);
   }
 
   /**
