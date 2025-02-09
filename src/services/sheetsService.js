@@ -48,7 +48,7 @@ class SheetsService {
    */
   parseAmount(value) {
     if (!value) return NaN;
-    const numStr = value.toString().replace(/[¥,]/g, '');
+    const numStr = value.toString().replace(/[¥￥,]/g, '');
     return parseInt(numStr, 10);
   }
 
@@ -71,6 +71,17 @@ class SheetsService {
   }
 
   /**
+   * 日付を指定フォーマットに変換する
+   * @param {string} date YYYY-MM-DD形式の日付
+   * @param {boolean} useSlash trueの場合YYYY/MM/DD形式、falseの場合YYYY-MM-DD形式
+   * @returns {string} フォーマットされた日付
+   */
+  formatDate(date, useSlash = false) {
+    if (!date) return '';
+    return useSlash ? date.replace(/-/g, '/') : date;
+  }
+
+  /**
    * 月次シートを取得または作成する
    * @param {string} userId ユーザーID
    * @param {string} yearMonth YYYY-MM形式の年月
@@ -88,12 +99,15 @@ class SheetsService {
         fields: 'sheets.properties'
       });
 
-      // 既存のシートを検索
+      // 既存のシートを検索（新旧両方のフォーマットで）
       const sheets = response.data.sheets;
-      const sheet = sheets.find(s => s.properties.title === sheetName);
+      const sheet = sheets.find(s => 
+        s.properties.title === sheetName || 
+        s.properties.title === yearMonth // 旧フォーマット（YYYY-MM）との互換性
+      );
 
       if (sheet) {
-        debugLog(`Found existing sheet: ${sheetName}`);
+        debugLog(`Found existing sheet: ${sheet.properties.title}`);
         return {
           sheetId: sheet.properties.sheetId,
           title: sheet.properties.title
@@ -123,13 +137,14 @@ class SheetsService {
       const newSheet = result.data.replies[0].duplicateSheet;
       debugLog(`Created new sheet: ${sheetName}`);
 
-      // 初日を設定
+      // 初日を設定（YYYY/MM/DD形式）
+      const firstDay = `${yearMonth}-01`;
       await this.sheets.spreadsheets.values.update({
         spreadsheetId,
         range: `${sheetName}!D3`,
         valueInputOption: 'USER_ENTERED',
         resource: {
-          values: [[`${yearMonth}-01`]]
+          values: [[this.formatDate(firstDay, true)]]
         }
       });
 
@@ -154,16 +169,28 @@ class SheetsService {
    * @returns {Promise<number>} 空き行の行番号
    */
   async findEmptyRow(spreadsheetId, sheetTitle) {
-    const response = await this.sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheetTitle}!B2:E26`
-    });
+    // A列（No）とB-E列を取得
+    const [noResponse, dataResponse] = await Promise.all([
+      this.sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheetTitle}!A2:A26`
+      }),
+      this.sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${sheetTitle}!B2:E26`
+      })
+    ]);
 
-    const values = response.data.values || [];
-    for (let i = 0; i < values.length; i++) {
-      const row = values[i];
-      if (!row || row.every(cell => !cell)) {
-        return i + 2;
+    const noValues = noResponse.data.values || [];
+    const dataValues = dataResponse.data.values || [];
+
+    // 2行目から26行目まで検索
+    for (let i = 0; i < 25; i++) {
+      // A列にNoが入力済みで、B-E列が空の行を探す
+      const hasNo = noValues[i]?.[0];
+      const row = dataValues[i] || [];
+      if (hasNo && row.every(cell => !cell)) {
+        return i + 2;  // インデックスは0始まりなので+2
       }
     }
 
@@ -202,7 +229,7 @@ class SheetsService {
         valueInputOption: 'USER_ENTERED',
         resource: {
           values: [[
-            date,
+            this.formatDate(date),  // YYYY-MM-DD形式
             amount,
             details || '（内容なし）',
             fileUrl ? `${memo || ''}\n${fileUrl}` : (memo || '')
