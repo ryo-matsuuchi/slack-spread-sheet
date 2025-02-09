@@ -248,8 +248,9 @@ class SheetsService {
       debugLog(`Getting list for user: ${userId}, month: ${yearMonth}`);
       const spreadsheetId = await settingsService.getSpreadsheetId(userId);
 
-      // シートの存在確認
+      // シートの存在確認と作成
       const sheet = await this.getOrCreateSheet(userId, yearMonth);
+      debugLog(`Using sheet: ${sheet.title}`);
 
       // データを取得
       const response = await this.sheets.spreadsheets.values.get({
