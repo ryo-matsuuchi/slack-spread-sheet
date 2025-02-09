@@ -25,11 +25,17 @@ class DriveError extends Error {
 
 class DriveService {
   constructor() {
-    const credentials = require('../../credentials/slack-keihi-app-ce3078b9ae32.json');
+    const clientEmail = process.env.GOOGLE_CLIENT_EMAIL;
+    const privateKey = process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+
+    if (!clientEmail || !privateKey) {
+      throw new Error('GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY environment variables are required');
+    }
+
     this.auth = new google.auth.JWT(
-      credentials.client_email,
+      clientEmail,
       null,
-      credentials.private_key,
+      privateKey,
       ['https://www.googleapis.com/auth/drive']
     );
     this.drive = google.drive({ version: 'v3', auth: this.auth });
