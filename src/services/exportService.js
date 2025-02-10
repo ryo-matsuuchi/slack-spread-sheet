@@ -72,34 +72,31 @@ class ExportService {
         throw new Error(`シート "${sheetName}" が見つかりません。`);
       }
 
-      // PDFエクスポートのリクエストを作成
-      const exportRequest = {
-        spreadsheetId,
-        ranges: [`${sheetName}!A1:E27`], // エクスポートする範囲を指定
-        mimeType: 'application/pdf',
-        exportFormat: 'pdf',
-        portaitMode: true,
-        fitToPage: true,
-        scale: 100,
-        margins: {
-          top: 0.5,
-          bottom: 0.5,
-          left: 0.5,
-          right: 0.5
-        },
-        pageSize: 'A4'
-      };
+      // PDFエクスポートのURLを構築
+      const token = await this.auth.getAccessToken();
+      const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export`;
+      const params = new URLSearchParams({
+        format: 'pdf',
+        gid: sheet.properties.sheetId,
+        size: 'A4',
+        portrait: 'true',
+        fitw: 'true',
+        gridlines: 'false',
+        printtitle: 'false',
+        top_margin: '0.5',
+        bottom_margin: '0.5',
+        left_margin: '0.5',
+        right_margin: '0.5',
+        sheetnames: 'false',
+        range: `${sheetName}!A1:E27`
+      });
 
-      // PDFとしてエクスポート
-      const response = await this.sheets.spreadsheets.get({
-        spreadsheetId,
-        ranges: exportRequest.ranges,
-        fields: '*',
-      }, {
-        responseType: 'arraybuffer',
+      // PDFをダウンロード
+      const response = await axios.get(`${url}?${params.toString()}`, {
         headers: {
-          'Accept': 'application/pdf'
-        }
+          Authorization: `Bearer ${token.token}`,
+        },
+        responseType: 'arraybuffer'
       });
 
       return Buffer.from(response.data);
