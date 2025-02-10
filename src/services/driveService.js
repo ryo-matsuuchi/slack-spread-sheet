@@ -115,6 +115,43 @@ class DriveService {
   }
 
   /**
+   * 年月フォルダを取得または作成する
+   * @param {string} userId ユーザーID
+   * @param {string} yearMonth YYYY-MM形式の年月
+   * @returns {Promise<string>} フォルダID
+   */
+  async getOrCreateMonthFolder(userId, yearMonth) {
+    try {
+      debugLog(`Getting/Creating month folder for user: ${userId}, month: ${yearMonth}`);
+
+      // ユーザーフォルダを作成または取得（メールアドレスでの権限設定付き）
+      const userFolderId = await this.ensureFolder(
+        userId,
+        userId,
+        this.rootFolderId,
+        true // ユーザーフォルダには権限を設定
+      );
+
+      // 年月フォルダを作成または取得
+      const monthFolderId = await this.ensureFolder(
+        userId,
+        yearMonth,
+        userFolderId,
+        false // 年月フォルダは親から権限を継承
+      );
+
+      return monthFolderId;
+    } catch (error) {
+      errorLog('Get/Create month folder error:', error);
+      throw new DriveError(
+        '年月フォルダの取得/作成に失敗しました。',
+        userId,
+        'getOrCreateMonthFolder'
+      );
+    }
+  }
+
+  /**
    * ファイルをアップロードする
    * @param {string} userId ユーザーID
    * @param {string} yearMonth YYYY-MM形式の年月
@@ -127,26 +164,13 @@ class DriveService {
     try {
       debugLog(`Uploading file: ${fileName} for user: ${userId} in: ${yearMonth}`);
 
-      // ユーザーフォルダを作成または取得（メールアドレスでの権限設定付き）
-      const userFolderId = await this.ensureFolder(
-        userId,
-        userId,
-        this.rootFolderId,
-        true // ユーザーフォルダには権限を設定
-      );
-
-      // 年月フォルダを作成または取得
-      const yearMonthFolderId = await this.ensureFolder(
-        userId,
-        yearMonth,
-        userFolderId,
-        false // 年月フォルダは親から権限を継承
-      );
+      // 年月フォルダを取得または作成
+      const monthFolderId = await this.getOrCreateMonthFolder(userId, yearMonth);
 
       // ファイルをアップロード
       const fileMetadata = {
         name: fileName,
-        parents: [yearMonthFolderId],
+        parents: [monthFolderId],
       };
 
       const media = {
