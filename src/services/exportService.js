@@ -59,19 +59,37 @@ class ExportService {
     try {
       debugLog(`Exporting sheet to PDF: ${sheetName}`);
 
-      const response = await this.drive.files.export({
+      // シートIDを取得
+      const sheetsResponse = await this.sheets.spreadsheets.get({
+        spreadsheetId,
+        fields: 'sheets.properties'
+      });
+
+      const sheet = sheetsResponse.data.sheets.find(s => s.properties.title === sheetName);
+      if (!sheet) {
+        throw new Error(`シート "${sheetName}" が見つかりません。`);
+      }
+
+      // PDFエクスポートのクエリパラメータを設定
+      const exportParams = {
         fileId: spreadsheetId,
         mimeType: 'application/pdf',
-        // PDFエクスポートのオプション
-        requestBody: {
-          exportOptions: {
-            mimeType: 'application/pdf',
-            pageSize: 'A4',
-            fitToPage: true,
-            sheetNames: [sheetName],
-          },
-        },
-      }, {
+        // エクスポート設定をクエリパラメータとして指定
+        exportFormat: 'pdf',
+        gid: sheet.properties.sheetId,
+        size: 'A4',
+        fitw: true, // 幅に合わせる
+        gridlines: false, // グリッドラインを非表示
+        printtitle: false, // タイトルを非表示
+        top_margin: 0.5,
+        bottom_margin: 0.5,
+        left_margin: 0.5,
+        right_margin: 0.5,
+        portrait: true, // 縦向き
+      };
+
+      // PDFをエクスポート
+      const response = await this.drive.files.export(exportParams, {
         responseType: 'arraybuffer'
       });
 
