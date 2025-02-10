@@ -40,7 +40,8 @@ class ExportService {
       null,
       privateKey,
       [
-        'https://www.googleapis.com/auth/spreadsheets.readonly',
+        'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/drive',
         'https://www.googleapis.com/auth/drive.file'
       ]
     );
@@ -59,38 +60,46 @@ class ExportService {
     try {
       debugLog(`Exporting sheet to PDF: ${sheetName}`);
 
-      // シートIDを取得
-      const sheetsResponse = await this.sheets.spreadsheets.get({
+      // スプレッドシートの情報を取得
+      const spreadsheet = await this.sheets.spreadsheets.get({
         spreadsheetId,
         fields: 'sheets.properties'
       });
 
-      const sheet = sheetsResponse.data.sheets.find(s => s.properties.title === sheetName);
+      // シートの存在確認
+      const sheet = spreadsheet.data.sheets.find(s => s.properties.title === sheetName);
       if (!sheet) {
         throw new Error(`シート "${sheetName}" が見つかりません。`);
       }
 
-      // PDFエクスポートのクエリパラメータを設定
-      const exportParams = {
-        fileId: spreadsheetId,
+      // PDFエクスポートのリクエストを作成
+      const exportRequest = {
+        spreadsheetId,
+        ranges: [`${sheetName}!A1:E27`], // エクスポートする範囲を指定
         mimeType: 'application/pdf',
-        // エクスポート設定をクエリパラメータとして指定
         exportFormat: 'pdf',
-        gid: sheet.properties.sheetId,
-        size: 'A4',
-        fitw: true, // 幅に合わせる
-        gridlines: false, // グリッドラインを非表示
-        printtitle: false, // タイトルを非表示
-        top_margin: 0.5,
-        bottom_margin: 0.5,
-        left_margin: 0.5,
-        right_margin: 0.5,
-        portrait: true, // 縦向き
+        portaitMode: true,
+        fitToPage: true,
+        scale: 100,
+        margins: {
+          top: 0.5,
+          bottom: 0.5,
+          left: 0.5,
+          right: 0.5
+        },
+        pageSize: 'A4'
       };
 
-      // PDFをエクスポート
-      const response = await this.drive.files.export(exportParams, {
-        responseType: 'arraybuffer'
+      // PDFとしてエクスポート
+      const response = await this.sheets.spreadsheets.get({
+        spreadsheetId,
+        ranges: exportRequest.ranges,
+        fields: '*',
+      }, {
+        responseType: 'arraybuffer',
+        headers: {
+          'Accept': 'application/pdf'
+        }
       });
 
       return Buffer.from(response.data);
