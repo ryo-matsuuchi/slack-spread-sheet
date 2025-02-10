@@ -75,27 +75,27 @@ class PDFService {
       const mergedPdf = await PDFDocument.create();
       const helveticaFont = await mergedPdf.embedFont(StandardFonts.Helvetica);
 
-      let currentPage = 0;
-      
       // 各PDFを結合
       for (const pdfBuffer of pdfBuffers) {
-        const pdf = await PDFDocument.load(pdfBuffer);
-        const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-        copiedPages.forEach(page => {
-          mergedPdf.addPage(page);
-        });
-      }
-
-      // しおりの追加
-      if (bookmarks.length > 0) {
-        const outline = mergedPdf.outline;
-        bookmarks.forEach(({ title, pageNumber }) => {
-          outline.addItem(title).addPage(pageNumber - 1);
-        });
+        try {
+          const pdf = await PDFDocument.load(pdfBuffer);
+          const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+          copiedPages.forEach(page => {
+            mergedPdf.addPage(page);
+          });
+        } catch (error) {
+          errorLog('Error copying PDF:', error);
+          // 個別のPDFの読み込みエラーはスキップして続行
+          continue;
+        }
       }
 
       // ページ番号の追加
       const pages = mergedPdf.getPages();
+      if (pages.length === 0) {
+        throw new Error('有効なPDFページがありません。');
+      }
+
       pages.forEach((page, index) => {
         const { width, height } = page.getSize();
         page.drawText(`${index + 1} / ${pages.length}`, {
@@ -106,6 +106,27 @@ class PDFService {
           color: rgb(0.5, 0.5, 0.5),
         });
       });
+
+      // しおりの追加（アウトラインが利用可能な場合のみ）
+      try {
+        if (bookmarks.length > 0) {
+          // アウトラインを作成
+          const outline = mergedPdf.outline;
+          bookmarks.forEach(({ title, pageNumber }) => {
+            if (pageNumber > 0 && pageNumber <= pages.length) {
+              const ref = mergedPdf.context.register(
+                mergedPdf.catalog.getOrCreateOutlineTree()
+              );
+              const item = ref.addItem(title);
+              const page = pages[pageNumber - 1];
+              item.setDestination(page);
+            }
+          });
+        }
+      } catch (error) {
+        errorLog('Error adding bookmarks:', error);
+        // しおりの追加に失敗しても、PDFの結合自体は続行
+      }
 
       return await mergedPdf.save();
     } catch (error) {
@@ -125,11 +146,27 @@ class PDFService {
       debugLog('Adding bookmarks');
       
       const pdfDoc = await PDFDocument.load(pdfBuffer);
-      const outline = pdfDoc.outline;
+      const pages = pdfDoc.getPages();
 
-      bookmarks.forEach(({ title, pageNumber }) => {
-        outline.addItem(title).addPage(pageNumber - 1);
-      });
+      if (bookmarks.length > 0) {
+        try {
+          // アウトラインを作成
+          const outline = pdfDoc.outline;
+          bookmarks.forEach(({ title, pageNumber }) => {
+            if (pageNumber > 0 && pageNumber <= pages.length) {
+              const ref = pdfDoc.context.register(
+                pdfDoc.catalog.getOrCreateOutlineTree()
+              );
+              const item = ref.addItem(title);
+              const page = pages[pageNumber - 1];
+              item.setDestination(page);
+            }
+          });
+        } catch (error) {
+          errorLog('Error adding bookmarks:', error);
+          throw new Error('しおりの追加に失敗しました。');
+        }
+      }
 
       return await pdfDoc.save();
     } catch (error) {
