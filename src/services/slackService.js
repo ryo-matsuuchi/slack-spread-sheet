@@ -4,8 +4,6 @@ const driveService = require('./driveService');
 const settingsService = require('./settingsService');
 const exportService = require('./exportService');
 const axios = require('axios');
-const fs = require('fs');
-const fsPromises = fs.promises;
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -342,26 +340,25 @@ class SlackService {
             exportService.exportExpenseReport(command.user_id, exportYearMonth)
               .then(async ({ pdfBuffer, fileUrl }) => {
                 // 成功時：PDFをアップロードしてスレッドで通知
-                // 一時ファイルを作成
-                const tempFilePath = `/tmp/経費精算書_${exportYearMonth}.pdf`;
-                await fsPromises.writeFile(tempFilePath, pdfBuffer);
+                // まずGoogleドライブのリンクを返信
+                const message = await client.chat.postMessage({
+                  channel: command.user_id,
+                  thread_ts: initialMessage.ts,
+                  text: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\n<${fileUrl}|Google Driveで開く>`
+                });
 
+                // 同じスレッドにファイルを添付
                 try {
-                  // ファイルをアップロード
-                  await client.files.upload({
-                    channels: command.user_id,
-                    thread_ts: initialMessage.ts,
+                  await client.files.uploadV2({
+                    channel_id: command.user_id,
+                    thread_ts: message.ts,
                     filename: `経費精算書_${exportYearMonth}.pdf`,
-                    file: tempFilePath,
-                    initial_comment: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\nGoogle Driveにも保存しました: <${fileUrl}|リンク>`
+                    file: pdfBuffer
                   });
-                } finally {
-                  // 一時ファイルを削除
-                  try {
-                    await fsPromises.unlink(tempFilePath);
-                  } catch (unlinkError) {
-                    console.error('一時ファイルの削除に失敗:', unlinkError);
-                  }
+                } catch (uploadError) {
+                  console.error('ファイルのアップロードに失敗:', uploadError);
+                  // ファイルのアップロードに失敗してもエラーは投げない
+                  // ユーザーはGoogleドライブのリンクから取得可能
                 }
               })
               .catch(async (error) => {
