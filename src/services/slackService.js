@@ -338,12 +338,15 @@ class SlackService {
 
             // 非同期でPDFを生成
             exportService.exportExpenseReport(command.user_id, exportYearMonth)
-              .then(async ({ fileUrl }) => {
-                // 成功時：スレッドで完了を通知
-                await client.chat.postMessage({
-                  channel: command.user_id,
+              .then(async ({ pdfBuffer, fileUrl }) => {
+                // 成功時：PDFをアップロードしてスレッドで通知
+                await client.files.upload({
+                  channels: command.user_id,
                   thread_ts: initialMessage.ts,
-                  text: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\n<${fileUrl}|PDFを開く>`
+                  filename: `経費精算書_${exportYearMonth}.pdf`,
+                  filetype: 'pdf',
+                  file: pdfBuffer,
+                  initial_comment: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\nGoogle Driveにも保存しました: <${fileUrl}|リンク>`
                 });
               })
               .catch(async (error) => {
