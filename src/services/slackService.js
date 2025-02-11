@@ -330,21 +330,32 @@ class SlackService {
             // 年月の取得（指定がない場合は現在の年月）
             const exportYearMonth = args[0] || new Date().toISOString().substring(0, 7);
             
-            // 進捗メッセージを送信
-            await client.chat.postMessage({
+            // 即座に応答を返す
+            const initialMessage = await client.chat.postMessage({
               channel: command.user_id,
-              text: `${exportYearMonth}の経費精算書をPDFに出力しています...`
+              text: `${exportYearMonth}の経費精算書のPDF出力を開始しました。完了までしばらくお待ちください...`
             });
 
-            // PDFの出力
-            const { fileUrl } = await exportService.exportExpenseReport(command.user_id, exportYearMonth);
+            // 非同期でPDFを生成
+            exportService.exportExpenseReport(command.user_id, exportYearMonth)
+              .then(async ({ fileUrl }) => {
+                // 成功時：スレッドで完了を通知
+                await client.chat.postMessage({
+                  channel: command.user_id,
+                  thread_ts: initialMessage.ts,
+                  text: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\n<${fileUrl}|PDFを開く>`
+                });
+              })
+              .catch(async (error) => {
+                // エラー時：スレッドでエラーを通知
+                await client.chat.postMessage({
+                  channel: command.user_id,
+                  thread_ts: initialMessage.ts,
+                  text: `PDFの出力中にエラーが発生しました: ${error.message}`
+                });
+              });
 
-            // 完了メッセージを送信
-            await client.chat.postMessage({
-              channel: command.user_id,
-              text: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\n<${fileUrl}|PDFを開く>`
-            });
-            debugLog('Export completed');
+            debugLog('Export process started');
             return;
 
           default:
