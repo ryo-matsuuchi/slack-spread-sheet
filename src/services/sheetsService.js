@@ -1,5 +1,6 @@
 const { google } = require('googleapis');
 const settingsService = require('./settingsService');
+const driveService = require('./driveService');
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -137,16 +138,30 @@ class SheetsService {
       const newSheet = result.data.replies[0].duplicateSheet;
       debugLog(`Created new sheet: ${sheetName}`);
 
-      // 初日を設定（YYYY/MM/DD形式）
+      // 初日を設定（YYYY/MM/DD形式）とフォルダリンクを追加
       const firstDay = `${yearMonth}-01`;
-      await this.sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `${sheetName}!D3`,
-        valueInputOption: 'USER_ENTERED',
-        resource: {
-          values: [[this.formatDate(firstDay, true)]]
-        }
-      });
+      const monthFolder = await driveService.getOrCreateMonthFolder(userId, yearMonth);
+      const folderUrl = `https://drive.google.com/drive/folders/${monthFolder}`;
+
+      // D3に初日、G3にフォルダリンクを設定
+      await Promise.all([
+        this.sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${sheetName}!D3`,
+          valueInputOption: 'USER_ENTERED',
+          resource: {
+            values: [[this.formatDate(firstDay, true)]]
+          }
+        }),
+        this.sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${sheetName}!G3`,
+          valueInputOption: 'USER_ENTERED',
+          resource: {
+            values: [[`=HYPERLINK("${folderUrl}", "領収書フォルダ")`]]
+          }
+        })
+      ]);
 
       return {
         sheetId: newSheet.sheetId,
