@@ -1,7 +1,6 @@
 const { App, ExpressReceiver } = require('@slack/bolt');
 const config = require('./config/config');
 const slackService = require('./services/slackService');
-const sessionService = require('./services/sessionService');
 const fs = require('fs');
 const path = require('path');
 
@@ -90,7 +89,6 @@ process.on('uncaughtException', (error) => {
   try {
     // サービスの初期化
     await slackService.initialize(app);
-    sessionService.startCleanupInterval();
 
     // アプリの起動（Glitchのポートを使用）
     const port = process.env.PORT || 3000;

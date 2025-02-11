@@ -3,7 +3,6 @@ const sheetsService = require('./sheetsService');
 const driveService = require('./driveService');
 const settingsService = require('./settingsService');
 const exportService = require('./exportService');
-const sessionService = require('./sessionService');
 const axios = require('axios');
 
 // デバッグログの設定
@@ -328,22 +327,9 @@ class SlackService {
               throw new Error('スプレッドシートが設定されていません。/keihi setup [スプレッドシートID] で設定してください。');
             }
 
-            // 処理状態をチェック
-            const stateMessage = sessionService.getUserStateMessage(command.user_id);
-            if (stateMessage) {
-              await client.chat.postMessage({
-                channel: command.user_id,
-                text: stateMessage
-              });
-              return;
-            }
-
             // 年月の取得（指定がない場合は現在の年月）
             const exportYearMonth = args[0] || new Date().toISOString().substring(0, 7);
             
-            // 処理状態を設定
-            sessionService.setUserState(command.user_id, 'exporting');
-
             // 即座に応答を返す
             const initialMessage = await client.chat.postMessage({
               channel: command.user_id,
@@ -367,9 +353,6 @@ class SlackService {
                 thread_ts: initialMessage.ts,
                 text: `PDFの出力中にエラーが発生しました: ${error.message}`
               });
-            } finally {
-              // 処理状態をクリア
-              sessionService.setUserState(command.user_id, null);
             }
 
             debugLog('Export process completed');
@@ -485,23 +468,8 @@ class SlackService {
           return;
         }
 
-        // 処理状態をチェック
-        const stateMessage = sessionService.getUserStateMessage(userId);
-        if (stateMessage) {
-          await ack({
-            response_action: 'errors',
-            errors: {
-              amount_block: stateMessage
-            }
-          });
-          return;
-        }
-
         // 即座に応答を返し、モーダルを閉じる
         await ack();
-
-        // 処理状態を設定
-        sessionService.setUserState(userId, 'creating');
 
         // 処理開始メッセージを送信
         const initialMessage = await client.chat.postMessage({
@@ -574,9 +542,6 @@ class SlackService {
         } catch (msgError) {
           errorLog('Error sending error message:', msgError);
         }
-      } finally {
-        // 処理状態をクリア
-        sessionService.setUserState(userId, null);
       }
     });
 
@@ -616,23 +581,8 @@ class SlackService {
           return;
         }
 
-        // 処理状態をチェック
-        const stateMessage = sessionService.getUserStateMessage(userId);
-        if (stateMessage) {
-          await ack({
-            response_action: 'errors',
-            errors: {
-              amount_block: stateMessage
-            }
-          });
-          return;
-        }
-
         // 即座に応答を返し、モーダルを閉じる
         await ack();
-
-        // 処理状態を設定
-        sessionService.setUserState(userId, 'creating');
 
         debugLog('Handling expense_direct_modal submission');
         debugLog('View payload:', JSON.stringify(view, null, 2));
@@ -671,11 +621,6 @@ class SlackService {
           });
         } catch (msgError) {
           errorLog('Error sending error message:', msgError);
-        }
-      } finally {
-        if (userId) {
-          // 処理状態をクリア
-          sessionService.setUserState(userId, null);
         }
       }
     });
