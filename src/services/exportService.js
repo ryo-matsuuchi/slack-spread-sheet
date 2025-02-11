@@ -141,8 +141,9 @@ class ExportService {
       debugLog(`Getting receipts for ${yearMonth}`);
       const folderId = await driveService.getOrCreateMonthFolder(userId, yearMonth);
       
+      // 経費精算書PDFを除外して領収書のみを取得
       const response = await this.drive.files.list({
-        q: `'${folderId}' in parents and trashed = false`,
+        q: `'${folderId}' in parents and name != '経費精算書_${yearMonth}.pdf' and trashed = false`,
         fields: 'files(id, name, mimeType, webViewLink)',
         orderBy: 'name',
       });
