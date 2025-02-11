@@ -1,11 +1,7 @@
-const { PDFDocument } = require('pdf-lib');
+const { PDFDocument, rgb } = require('pdf-lib');
 const fs = require('fs').promises;
 const path = require('path');
-const dotenv = require('dotenv');
 const pdfService = require('../src/services/pdfService');
-
-// テスト用の環境変数を読み込む
-dotenv.config({ path: path.join(__dirname, '.env.test') });
 
 // テスト用のディレクトリ
 const TEST_DIR = path.join(__dirname, 'data');
@@ -17,6 +13,7 @@ async function createTestPDF(text, pageCount = 1) {
   for (let i = 0; i < pageCount; i++) {
     const page = pdfDoc.addPage();
     const { width, height } = page.getSize();
+    // 日本語テキストの代わりに英数字を使用
     page.drawText(`${text} - Page ${i + 1}`, {
       x: 50,
       y: height - 50,
@@ -31,16 +28,16 @@ async function testPDFMerge() {
   try {
     console.log('Creating test PDFs...');
     
-    // テストPDFの作成
-    const pdf1 = await createTestPDF('経費精算書', 1);
-    const pdf2 = await createTestPDF('領収書1', 1);
-    const pdf3 = await createTestPDF('領収書2', 1);
+    // テストPDFの作成（英語のテキストを使用）
+    const pdf1 = await createTestPDF('Expense Report', 1);
+    const pdf2 = await createTestPDF('Receipt 1', 1);
+    const pdf3 = await createTestPDF('Receipt 2', 1);
 
-    // しおり情報の作成
+    // しおり情報の作成（英語のテキストを使用）
     const bookmarks = [
-      { title: '経費精算書', pageNumber: 1 },
-      { title: '領収書1', pageNumber: 2 },
-      { title: '領収書2', pageNumber: 3 }
+      { title: 'Expense Report', pageNumber: 1 },
+      { title: 'Receipt 1', pageNumber: 2 },
+      { title: 'Receipt 2', pageNumber: 3 }
     ];
 
     console.log('Merging PDFs...');
@@ -98,14 +95,14 @@ async function testBookmarks() {
   try {
     console.log('Testing bookmark addition...');
 
-    // テストPDFの作成
-    const pdf = await createTestPDF('テストPDF', 3);
+    // テストPDFの作成（英語のテキストを使用）
+    const pdf = await createTestPDF('Test Document', 3);
 
-    // しおり情報の作成
+    // しおり情報の作成（英語のテキストを使用）
     const bookmarks = [
-      { title: 'ページ1', pageNumber: 1 },
-      { title: 'ページ2', pageNumber: 2 },
-      { title: 'ページ3', pageNumber: 3 }
+      { title: 'Page 1', pageNumber: 1 },
+      { title: 'Page 2', pageNumber: 2 },
+      { title: 'Page 3', pageNumber: 3 }
     ];
 
     // しおりを追加
