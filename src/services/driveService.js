@@ -153,6 +153,41 @@ class DriveService {
   }
 
   /**
+   * 指定したフォルダ内の特定のファイルを検索して削除する
+   * @param {string} folderId フォルダID
+   * @param {string} fileName ファイル名
+   * @returns {Promise<void>}
+   */
+  async deleteFileByName(folderId, fileName) {
+    try {
+      debugLog(`Searching for file: ${fileName} in folder: ${folderId}`);
+      
+      // ファイルを検索
+      const query = `name='${fileName}' and '${folderId}' in parents and trashed=false`;
+      const response = await this.drive.files.list({
+        q: query,
+        fields: 'files(id)',
+        spaces: 'drive',
+      });
+
+      // 既存のファイルを削除
+      for (const file of response.data.files) {
+        debugLog(`Deleting file: ${file.id}`);
+        await this.drive.files.delete({
+          fileId: file.id
+        });
+      }
+    } catch (error) {
+      errorLog('Delete file error:', error);
+      throw new DriveError(
+        'ファイルの削除に失敗しました。',
+        null,
+        'deleteFileByName'
+      );
+    }
+  }
+
+  /**
    * ファイルをアップロードする
    * @param {string} userId ユーザーID
    * @param {string} yearMonth YYYY-MM形式の年月
@@ -167,6 +202,9 @@ class DriveService {
 
       // 年月フォルダを取得または作成
       const monthFolderId = await this.getOrCreateMonthFolder(userId, yearMonth);
+
+      // 同名のファイルが存在する場合は削除
+      await this.deleteFileByName(monthFolderId, fileName);
 
       // ファイルをアップロード
       const fileMetadata = {
