@@ -4,7 +4,7 @@ const driveService = require('./driveService');
 const settingsService = require('./settingsService');
 const exportService = require('./exportService');
 const axios = require('axios');
-const { Readable } = require('stream');
+const fs = require('fs').promises;
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -341,14 +341,27 @@ class SlackService {
             exportService.exportExpenseReport(command.user_id, exportYearMonth)
               .then(async ({ pdfBuffer, fileUrl }) => {
                 // 成功時：PDFをアップロードしてスレッドで通知
-                await client.files.upload({
-                  channels: command.user_id,
-                  thread_ts: initialMessage.ts,
-                  filename: `経費精算書_${exportYearMonth}.pdf`,
-                  filetype: 'pdf',
-                  buffer: pdfBuffer,
-                  initial_comment: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\nGoogle Driveにも保存しました: <${fileUrl}|リンク>`
-                });
+                // 一時ファイルを作成
+                const tempFilePath = `/tmp/経費精算書_${exportYearMonth}.pdf`;
+                await fs.promises.writeFile(tempFilePath, pdfBuffer);
+
+                try {
+                  // ファイルをアップロード
+                  await client.files.upload({
+                    channels: command.user_id,
+                    thread_ts: initialMessage.ts,
+                    filename: `経費精算書_${exportYearMonth}.pdf`,
+                    file: tempFilePath,
+                    initial_comment: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\nGoogle Driveにも保存しました: <${fileUrl}|リンク>`
+                  });
+                } finally {
+                  // 一時ファイルを削除
+                  try {
+                    await fs.promises.unlink(tempFilePath);
+                  } catch (unlinkError) {
+                    console.error('一時ファイルの削除に失敗:', unlinkError);
+                  }
+                }
               })
               .catch(async (error) => {
                 // エラー時：スレッドでエラーを通知
