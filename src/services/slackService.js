@@ -436,21 +436,9 @@ class SlackService {
 
     // ファイル添付ありのモーダル送信処理
     this.app.view('expense_modal', async ({ ack, body, view, client }) => {
-      await ack();
-      debugLog('Handling expense_modal submission');
-
       try {
-        // サーバーの状態をチェック
-        if (!this.app.isServerReady()) {
-          throw new Error('サーバーが起動していません。しばらく待ってから再度お試しください。');
-        }
-
-        debugLog('View payload:', JSON.stringify(view, null, 2));
-        debugLog('Body payload:', JSON.stringify(body, null, 2));
-
+        // 入力値を取得
         const metadata = JSON.parse(view.private_metadata);
-        debugLog('Metadata:', JSON.stringify(metadata, null, 2));
-
         const { fileId, fileName, fileType, fileUrl, channelId, userId, messageTs } = metadata;
         const values = view.state.values;
 
@@ -464,11 +452,24 @@ class SlackService {
           throw new Error('金額を入力してください。');
         }
 
-        // 即座に処理開始メッセージを送信
+        // 即座に応答を返す
+        await ack();
+
+        // 処理開始メッセージを送信
         const initialMessage = await client.chat.postMessage({
           channel: userId,
           text: '経費精算書の作成を開始しました。完了までしばらくお待ちください...'
         });
+
+        debugLog('Handling expense_modal submission');
+        debugLog('View payload:', JSON.stringify(view, null, 2));
+        debugLog('Body payload:', JSON.stringify(body, null, 2));
+        debugLog('Metadata:', JSON.stringify(metadata, null, 2));
+
+        // サーバーの状態をチェック
+        if (!this.app.isServerReady()) {
+          throw new Error('サーバーが起動していません。しばらく待ってから再度お試しください。');
+        }
 
         // 非同期で処理を実行
         (async () => {
@@ -544,21 +545,9 @@ class SlackService {
 
     // ファイル添付なしのモーダル送信処理
     this.app.view('expense_direct_modal', async ({ ack, body, view, client }) => {
-      await ack();
-      debugLog('Handling expense_direct_modal submission');
-
       try {
-        // サーバーの状態をチェック
-        if (!this.app.isServerReady()) {
-          throw new Error('サーバーが起動していません。しばらく待ってから再度お試しください。');
-        }
-
-        debugLog('View payload:', JSON.stringify(view, null, 2));
-        debugLog('Body payload:', JSON.stringify(body, null, 2));
-
+        // 入力値を取得
         const metadata = JSON.parse(view.private_metadata);
-        debugLog('Metadata:', JSON.stringify(metadata, null, 2));
-
         const { userId } = metadata;
         const values = view.state.values;
 
@@ -570,6 +559,19 @@ class SlackService {
         // 金額が未入力の場合はエラー
         if (!amount) {
           throw new Error('金額を入力してください。');
+        }
+
+        // 即座に応答を返す
+        await ack();
+
+        debugLog('Handling expense_direct_modal submission');
+        debugLog('View payload:', JSON.stringify(view, null, 2));
+        debugLog('Body payload:', JSON.stringify(body, null, 2));
+        debugLog('Metadata:', JSON.stringify(metadata, null, 2));
+
+        // サーバーの状態をチェック
+        if (!this.app.isServerReady()) {
+          throw new Error('サーバーが起動していません。しばらく待ってから再度お試しください。');
         }
 
         // スプレッドシートに登録
