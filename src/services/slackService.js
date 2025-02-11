@@ -4,6 +4,7 @@ const driveService = require('./driveService');
 const settingsService = require('./settingsService');
 const exportService = require('./exportService');
 const axios = require('axios');
+const { Readable } = require('stream');
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -349,11 +350,16 @@ class SlackService {
 
                 // 同じスレッドにファイルを添付
                 try {
+                  // PDFバッファをReadableストリームに変換
+                  const stream = new Readable();
+                  stream.push(pdfBuffer);
+                  stream.push(null);
+
                   await client.files.uploadV2({
                     channel_id: command.user_id,
                     thread_ts: message.ts,
                     filename: `経費精算書_${exportYearMonth}.pdf`,
-                    file: pdfBuffer
+                    file: stream
                   });
                 } catch (uploadError) {
                   console.error('ファイルのアップロードに失敗:', uploadError);

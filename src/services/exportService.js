@@ -218,6 +218,24 @@ class ExportService {
       const folderId = await driveService.getOrCreateMonthFolder(userId, yearMonth);
       const fileName = `経費精算書_${yearMonth}.pdf`;
 
+      // 既存のPDFファイルを検索
+      debugLog(`Searching for existing PDF: ${fileName}`);
+      const existingFiles = await this.drive.files.list({
+        q: `name = '${fileName}' and '${folderId}' in parents and trashed = false`,
+        fields: 'files(id)'
+      });
+
+      // 既存のファイルを削除
+      if (existingFiles.data.files.length > 0) {
+        debugLog(`Found ${existingFiles.data.files.length} existing PDF files`);
+        for (const file of existingFiles.data.files) {
+          debugLog(`Deleting file: ${file.id}`);
+          await this.drive.files.delete({
+            fileId: file.id
+          });
+        }
+      }
+
       // ストリームの作成
       const stream = new Readable();
       stream.push(mergedPdf);
