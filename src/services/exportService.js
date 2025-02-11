@@ -109,7 +109,7 @@ class ExportService {
         left_margin: '0.25',
         right_margin: '0.25',
         sheetnames: 'false',
-        range: `${sheetName}!A1:E33`,
+        range: `${sheetName}!A1:E`,  // G列以降を除外
         fzr: 'false', // 行を固定しない
         fzc: 'false', // 列を固定しない
         pagenum: 'false', // ページ番号を表示しない

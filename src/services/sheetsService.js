@@ -222,7 +222,7 @@ class SheetsService {
       // 空き行を検索
       const rowNumber = await this.findEmptyRow(spreadsheetId, sheet.title);
 
-      // データを追加
+      // データを追加（B-E列）
       await this.sheets.spreadsheets.values.update({
         spreadsheetId,
         range: `${sheet.title}!B${rowNumber}:E${rowNumber}`,
@@ -232,10 +232,22 @@ class SheetsService {
             this.formatDate(date),  // YYYY-MM-DD形式
             amount,
             details || '（内容なし）',
-            fileUrl ? `${memo || ''}\n${fileUrl}` : (memo || '')
+            memo || ''
           ]]
         }
       });
+
+      // 領収書リンクをG列に追加（ある場合のみ）
+      if (fileUrl) {
+        await this.sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${sheet.title}!G${rowNumber}`,
+          valueInputOption: 'USER_ENTERED',
+          resource: {
+            values: [[fileUrl]]
+          }
+        });
+      }
 
       debugLog('Entry added successfully');
       return {
