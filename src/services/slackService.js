@@ -484,7 +484,7 @@ class SlackService {
         debugLog('Metadata:', JSON.stringify(metadata, null, 2));
 
         // 非同期で処理を実行
-        process.nextTick(async () => {
+        await (async () => {
           try {
             debugLog('Downloading file from URL:', fileUrl);
             // ファイルのダウンロード
@@ -594,7 +594,7 @@ class SlackService {
         await ack();
 
         // 非同期で処理を実行
-        process.nextTick(async () => {
+        await (async () => {
           try {
             debugLog('Handling expense_direct_modal submission');
             debugLog('View payload:', JSON.stringify(view, null, 2));
