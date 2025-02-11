@@ -76,12 +76,13 @@ class PDFService {
       const helveticaFont = await mergedPdf.embedFont(StandardFonts.Helvetica);
 
       // 各PDFを結合
+      const pageRefs = [];
       for (const pdfBuffer of pdfBuffers) {
         try {
           const pdf = await PDFDocument.load(pdfBuffer);
           const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
           copiedPages.forEach(page => {
-            mergedPdf.addPage(page);
+            pageRefs.push(mergedPdf.addPage(page));
           });
         } catch (error) {
           errorLog('Error copying PDF:', error);
@@ -91,14 +92,13 @@ class PDFService {
       }
 
       // ページ番号の追加
-      const pages = mergedPdf.getPages();
-      if (pages.length === 0) {
+      if (pageRefs.length === 0) {
         throw new Error('有効なPDFページがありません。');
       }
 
-      pages.forEach((page, index) => {
+      pageRefs.forEach((page, index) => {
         const { width, height } = page.getSize();
-        page.drawText(`${index + 1} / ${pages.length}`, {
+        page.drawText(`${index + 1} / ${pageRefs.length}`, {
           x: width - 60,
           y: 30,
           size: 10,
@@ -107,25 +107,47 @@ class PDFService {
         });
       });
 
-      // しおりの追加（アウトラインが利用可能な場合のみ）
-      try {
-        if (bookmarks.length > 0) {
-          // アウトラインを作成
-          const outline = mergedPdf.outline;
-          bookmarks.forEach(({ title, pageNumber }) => {
-            if (pageNumber > 0 && pageNumber <= pages.length) {
-              const ref = mergedPdf.context.register(
-                mergedPdf.catalog.getOrCreateOutlineTree()
-              );
-              const item = ref.addItem(title);
-              const page = pages[pageNumber - 1];
-              item.setDestination(page);
+      // しおりの追加
+      if (bookmarks.length > 0) {
+        try {
+          debugLog('Adding bookmarks');
+          
+          // アウトラインツリーの作成
+          const outlines = mergedPdf.context.obj({});
+          mergedPdf.catalog.set(mergedPdf.context.obj('Outlines'), outlines);
+
+          // しおりの追加
+          let lastOutline = null;
+          for (const { title, pageNumber } of bookmarks) {
+            if (pageNumber > 0 && pageNumber <= pageRefs.length) {
+              const page = pageRefs[pageNumber - 1];
+              const outline = mergedPdf.context.obj({
+                Title: title,
+                Parent: outlines,
+                Dest: [page.ref, 'XYZ', null, page.getHeight(), null],
+              });
+
+              if (!lastOutline) {
+                outlines.set('First', outline);
+              } else {
+                lastOutline.set('Next', outline);
+                outline.set('Prev', lastOutline);
+              }
+
+              lastOutline = outline;
             }
-          });
+          }
+
+          if (lastOutline) {
+            outlines.set('Last', lastOutline);
+          }
+
+          // アウトラインのカウントを設定
+          outlines.set('Count', bookmarks.length);
+        } catch (error) {
+          errorLog('Error adding bookmarks:', error);
+          // しおりの追加に失敗しても、PDFの結合自体は続行
         }
-      } catch (error) {
-        errorLog('Error adding bookmarks:', error);
-        // しおりの追加に失敗しても、PDFの結合自体は続行
       }
 
       return await mergedPdf.save();
@@ -150,18 +172,38 @@ class PDFService {
 
       if (bookmarks.length > 0) {
         try {
-          // アウトラインを作成
-          const outline = pdfDoc.outline;
-          bookmarks.forEach(({ title, pageNumber }) => {
+          // アウトラインツリーの作成
+          const outlines = pdfDoc.context.obj({});
+          pdfDoc.catalog.set(pdfDoc.context.obj('Outlines'), outlines);
+
+          // しおりの追加
+          let lastOutline = null;
+          for (const { title, pageNumber } of bookmarks) {
             if (pageNumber > 0 && pageNumber <= pages.length) {
-              const ref = pdfDoc.context.register(
-                pdfDoc.catalog.getOrCreateOutlineTree()
-              );
-              const item = ref.addItem(title);
               const page = pages[pageNumber - 1];
-              item.setDestination(page);
+              const outline = pdfDoc.context.obj({
+                Title: title,
+                Parent: outlines,
+                Dest: [page.ref, 'XYZ', null, page.getHeight(), null],
+              });
+
+              if (!lastOutline) {
+                outlines.set('First', outline);
+              } else {
+                lastOutline.set('Next', outline);
+                outline.set('Prev', lastOutline);
+              }
+
+              lastOutline = outline;
             }
-          });
+          }
+
+          if (lastOutline) {
+            outlines.set('Last', lastOutline);
+          }
+
+          // アウトラインのカウントを設定
+          outlines.set('Count', bookmarks.length);
         } catch (error) {
           errorLog('Error adding bookmarks:', error);
           throw new Error('しおりの追加に失敗しました。');

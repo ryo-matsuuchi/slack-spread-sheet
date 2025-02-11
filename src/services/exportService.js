@@ -3,6 +3,7 @@ const settingsService = require('./settingsService');
 const driveService = require('./driveService');
 const pdfService = require('./pdfService');
 const axios = require('axios');
+const { Readable } = require('stream');
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -60,24 +61,12 @@ class ExportService {
     try {
       debugLog(`Exporting sheet to PDF: ${sheetName}`);
 
-      // スプレッドシートの情報を取得
-      const spreadsheet = await this.sheets.spreadsheets.get({
-        spreadsheetId,
-        fields: 'sheets.properties'
-      });
-
-      // シートの存在確認
-      const sheet = spreadsheet.data.sheets.find(s => s.properties.title === sheetName);
-      if (!sheet) {
-        throw new Error(`シート "${sheetName}" が見つかりません。`);
-      }
-
       // PDFエクスポートのURLを構築
       const token = await this.auth.getAccessToken();
       const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export`;
       const params = new URLSearchParams({
         format: 'pdf',
-        gid: sheet.properties.sheetId,
+        gid: '0', // シートIDは0を使用（最初のシート）
         size: 'A4',
         portrait: 'true',
         fitw: 'true',
@@ -200,6 +189,11 @@ class ExportService {
       const folderId = await driveService.getOrCreateMonthFolder(userId, yearMonth);
       const fileName = `経費精算書_${yearMonth}.pdf`;
 
+      // ストリームの作成
+      const stream = new Readable();
+      stream.push(mergedPdf);
+      stream.push(null);
+
       const file = await this.drive.files.create({
         requestBody: {
           name: fileName,
@@ -208,7 +202,7 @@ class ExportService {
         },
         media: {
           mimeType: 'application/pdf',
-          body: mergedPdf,
+          body: stream,
         },
       });
 
