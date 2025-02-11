@@ -116,7 +116,7 @@ class SheetsService {
       }
 
       // _baseシートを複製して新しいシートを作成
-      debugLog('Creating new sheet from _base');
+      debugLog('Creating new sheet from _base at index 0');
       const baseSheet = sheets.find(s => s.properties.title === '_base');
       if (!baseSheet) {
         throw new SheetsError('_baseシートが見つかりません。', userId, 'getOrCreateSheet');
@@ -128,7 +128,7 @@ class SheetsService {
           requests: [{
             duplicateSheet: {
               sourceSheetId: baseSheet.properties.sheetId,
-              insertSheetIndex: sheets.length,
+              insertSheetIndex: 0, // 先頭に追加
               newSheetName: sheetName
             }
           }]
