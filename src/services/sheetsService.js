@@ -184,15 +184,21 @@ class SheetsService {
    * @returns {Promise<number>} 空き行の行番号
    */
   async findEmptyRow(spreadsheetId, sheetTitle) {
+    if (!sheetTitle) {
+      throw new Error('シート名が指定されていません。');
+    }
+
+    debugLog(`Finding empty row in sheet: ${sheetTitle}`);
+
     // A列（No）とB-E列を取得
     const [noResponse, dataResponse] = await Promise.all([
       this.sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: `${sheetTitle}!A2:A26`
+        range: `'${sheetTitle}'!A2:A26`
       }),
       this.sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: `${sheetTitle}!B2:E26`
+        range: `'${sheetTitle}'!B2:E26`
       })
     ]);
 
