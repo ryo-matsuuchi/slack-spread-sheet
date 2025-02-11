@@ -1,7 +1,66 @@
 class SessionService {
   constructor() {
     this.sessions = new Map();
+    this.userStates = new Map(); // ユーザーの処理状態を管理
     this.timeout = 5 * 60 * 1000; // 5分でセッション期限切れ
+  }
+
+  /**
+   * ユーザーの処理状態を設定
+   * @param {string} userId - SlackユーザーID
+   * @param {string} state - 処理状態 ('exporting' | 'creating' | null)
+   * @returns {void}
+   */
+  setUserState(userId, state) {
+    if (state === null) {
+      this.userStates.delete(userId);
+    } else {
+      this.userStates.set(userId, {
+        state,
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  /**
+   * ユーザーの処理状態を取得
+   * @param {string} userId - SlackユーザーID
+   * @returns {Object|null} 処理状態の情報
+   */
+  getUserState(userId) {
+    const state = this.userStates.get(userId);
+    if (!state) {
+      return null;
+    }
+
+    // タイムアウトチェック
+    if (Date.now() - state.timestamp > this.timeout) {
+      this.userStates.delete(userId);
+      return null;
+    }
+
+    return state;
+  }
+
+  /**
+   * ユーザーの処理状態に応じたメッセージを取得
+   * @param {string} userId - SlackユーザーID
+   * @returns {string|null} エラーメッセージ（処理中でない場合はnull）
+   */
+  getUserStateMessage(userId) {
+    const state = this.getUserState(userId);
+    if (!state) {
+      return null;
+    }
+
+    switch (state.state) {
+      case 'exporting':
+        return '現在PDFの出力中です。完了までお待ちください。';
+      case 'creating':
+        return '現在経費精算書の作成中です。完了までお待ちください。';
+      default:
+        return null;
+    }
   }
 
   /**
@@ -114,29 +173,55 @@ class SessionService {
     setInterval(() => {
       console.log('Running session cleanup');
       const now = Date.now();
+
+      // セッションのクリーンアップ
       for (const [key, session] of this.sessions.entries()) {
         if (now - session.timestamp > this.timeout) {
           console.log('Cleaning up expired session:', key);
           this.clearSession(key);
         }
       }
+
+      // ユーザー状態のクリーンアップ
+      for (const [userId, state] of this.userStates.entries()) {
+        if (now - state.timestamp > this.timeout) {
+          console.log('Cleaning up expired user state:', userId);
+          this.userStates.delete(userId);
+        }
+      }
     }, 60 * 1000); // 1分ごとにクリーンアップ
   }
 
   /**
-   * 現在のセッション一覧を取得（デバッグ用）
-   * @returns {Object} セッション一覧
+   * 現在のセッションと状態一覧を取得（デバッグ用）
+   * @returns {Object} セッションと状態の一覧
    */
   debugGetSessions() {
-    const sessions = {};
+    const now = Date.now();
+    const debug = {
+      sessions: {},
+      userStates: {}
+    };
+
+    // セッション情報
     for (const [key, session] of this.sessions.entries()) {
-      sessions[key] = {
+      debug.sessions[key] = {
         ...session,
-        age: Math.round((Date.now() - session.timestamp) / 1000) + '秒',
-        expires: Math.round((this.timeout - (Date.now() - session.timestamp)) / 1000) + '秒後',
+        age: Math.round((now - session.timestamp) / 1000) + '秒',
+        expires: Math.round((this.timeout - (now - session.timestamp)) / 1000) + '秒後',
       };
     }
-    return sessions;
+
+    // ユーザー状態情報
+    for (const [userId, state] of this.userStates.entries()) {
+      debug.userStates[userId] = {
+        ...state,
+        age: Math.round((now - state.timestamp) / 1000) + '秒',
+        expires: Math.round((this.timeout - (now - state.timestamp)) / 1000) + '秒後',
+      };
+    }
+
+    return debug;
   }
 }
 
