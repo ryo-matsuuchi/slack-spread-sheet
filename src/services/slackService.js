@@ -449,7 +449,24 @@ class SlackService {
 
         // 金額が未入力の場合はエラー
         if (!amount) {
-          throw new Error('金額を入力してください。');
+          await ack({
+            response_action: 'errors',
+            errors: {
+              amount_block: '金額を入力してください。'
+            }
+          });
+          return;
+        }
+
+        // サーバーの状態をチェック
+        if (!this.app.isServerReady()) {
+          await ack({
+            response_action: 'errors',
+            errors: {
+              amount_block: 'サーバーが起動していません。しばらく待ってから再度お試しください。'
+            }
+          });
+          return;
         }
 
         // 即座に応答を返す
@@ -466,13 +483,8 @@ class SlackService {
         debugLog('Body payload:', JSON.stringify(body, null, 2));
         debugLog('Metadata:', JSON.stringify(metadata, null, 2));
 
-        // サーバーの状態をチェック
-        if (!this.app.isServerReady()) {
-          throw new Error('サーバーが起動していません。しばらく待ってから再度お試しください。');
-        }
-
         // 非同期で処理を実行
-        (async () => {
+        process.nextTick(async () => {
           try {
             debugLog('Downloading file from URL:', fileUrl);
             // ファイルのダウンロード
@@ -558,43 +570,66 @@ class SlackService {
 
         // 金額が未入力の場合はエラー
         if (!amount) {
-          throw new Error('金額を入力してください。');
+          await ack({
+            response_action: 'errors',
+            errors: {
+              amount_block: '金額を入力してください。'
+            }
+          });
+          return;
+        }
+
+        // サーバーの状態をチェック
+        if (!this.app.isServerReady()) {
+          await ack({
+            response_action: 'errors',
+            errors: {
+              amount_block: 'サーバーが起動していません。しばらく待ってから再度お試しください。'
+            }
+          });
+          return;
         }
 
         // 即座に応答を返す
         await ack();
 
-        debugLog('Handling expense_direct_modal submission');
-        debugLog('View payload:', JSON.stringify(view, null, 2));
-        debugLog('Body payload:', JSON.stringify(body, null, 2));
-        debugLog('Metadata:', JSON.stringify(metadata, null, 2));
+        // 非同期で処理を実行
+        process.nextTick(async () => {
+          try {
+            debugLog('Handling expense_direct_modal submission');
+            debugLog('View payload:', JSON.stringify(view, null, 2));
+            debugLog('Body payload:', JSON.stringify(body, null, 2));
+            debugLog('Metadata:', JSON.stringify(metadata, null, 2));
 
-        // サーバーの状態をチェック
-        if (!this.app.isServerReady()) {
-          throw new Error('サーバーが起動していません。しばらく待ってから再度お試しください。');
-        }
+            // スプレッドシートに登録
+            debugLog('Adding entry to spreadsheet');
+            const sheetResult = await sheetsService.addEntry({
+              userId: userId,
+              date: date,
+              amount: amount,
+              details: details || '（内容なし）',
+              memo: memo || '',
+              fileUrl: '', // ファイルなし
+            });
 
-        // スプレッドシートに登録
-        debugLog('Adding entry to spreadsheet');
-        const sheetResult = await sheetsService.addEntry({
-          userId: userId,
-          date: date,
-          amount: amount,
-          details: details || '（内容なし）',
-          memo: memo || '',
-          fileUrl: '', // ファイルなし
-        });
+            // 完了メッセージを送信
+            const baseMessage = `• 日付: ${date}\n• 金額: ¥${amount.toLocaleString()}\n• 内容: ${details || '（内容なし）'}\n• メモ: ${memo || '（なし）'}`;
+            const links = `\n\n<${sheetResult.sheetUrl}|スプレッドシートで開く>`;
 
-        // 完了メッセージを送信
-        const baseMessage = `• 日付: ${date}\n• 金額: ¥${amount.toLocaleString()}\n• 内容: ${details || '（内容なし）'}\n• メモ: ${memo || '（なし）'}`;
-        const links = `\n\n<${sheetResult.sheetUrl}|スプレッドシートで開く>`;
-
-        debugLog('Sending completion message');
-        await client.chat.postMessage({
-          channel: userId,
-          text: sheetResult.success
-            ? `経費精算書を作成しました。\n${baseMessage}${links}`
-            : `${sheetResult.message}\n${baseMessage}\n\n経費精算書を確認: ${sheetResult.sheetUrl}`,
+            debugLog('Sending completion message');
+            await client.chat.postMessage({
+              channel: userId,
+              text: sheetResult.success
+                ? `経費精算書を作成しました。\n${baseMessage}${links}`
+                : `${sheetResult.message}\n${baseMessage}\n\n経費精算書を確認: ${sheetResult.sheetUrl}`,
+            });
+          } catch (error) {
+            errorLog('Error processing expense:', error);
+            await client.chat.postMessage({
+              channel: userId,
+              text: `エラーが発生しました: ${error.message}`
+            });
+          }
         });
 
       } catch (error) {
