@@ -469,7 +469,7 @@ class SlackService {
           return;
         }
 
-        // 即座に応答を返す
+        // 即座に応答を返し、モーダルを閉じる
         await ack();
 
         // 処理開始メッセージを送信
@@ -483,8 +483,8 @@ class SlackService {
         debugLog('Body payload:', JSON.stringify(body, null, 2));
         debugLog('Metadata:', JSON.stringify(metadata, null, 2));
 
-        // 非同期で処理を実行
-        await (async () => {
+        // モーダルを閉じた後に非同期で処理を実行
+        setImmediate(async () => {
           try {
             debugLog('Downloading file from URL:', fileUrl);
             // ファイルのダウンロード
@@ -590,11 +590,11 @@ class SlackService {
           return;
         }
 
-        // 即座に応答を返す
+        // 即座に応答を返し、モーダルを閉じる
         await ack();
 
-        // 非同期で処理を実行
-        await (async () => {
+        // モーダルを閉じた後に非同期で処理を実行
+        setImmediate(async () => {
           try {
             debugLog('Handling expense_direct_modal submission');
             debugLog('View payload:', JSON.stringify(view, null, 2));
