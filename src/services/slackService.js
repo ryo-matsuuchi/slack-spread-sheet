@@ -340,11 +340,16 @@ class SlackService {
             exportService.exportExpenseReport(command.user_id, exportYearMonth)
               .then(async ({ pdfBuffer, fileUrl }) => {
                 // 成功時：PDFをアップロードしてスレッドで通知
+                // PDFバッファをReadableストリームに変換
+                const stream = new Readable();
+                stream.push(pdfBuffer);
+                stream.push(null);
+
                 await client.files.uploadV2({
                   channel_id: command.user_id,
                   thread_ts: initialMessage.ts,
                   filename: `経費精算書_${exportYearMonth}.pdf`,
-                  file: pdfBuffer,
+                  file: stream,
                   initial_comment: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\nGoogle Driveにも保存しました: <${fileUrl}|リンク>`
                 });
               })
