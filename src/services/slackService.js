@@ -4,7 +4,8 @@ const driveService = require('./driveService');
 const settingsService = require('./settingsService');
 const exportService = require('./exportService');
 const axios = require('axios');
-const fs = require('fs').promises;
+const fs = require('fs');
+const fsPromises = fs.promises;
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -343,7 +344,7 @@ class SlackService {
                 // 成功時：PDFをアップロードしてスレッドで通知
                 // 一時ファイルを作成
                 const tempFilePath = `/tmp/経費精算書_${exportYearMonth}.pdf`;
-                await fs.promises.writeFile(tempFilePath, pdfBuffer);
+                await fsPromises.writeFile(tempFilePath, pdfBuffer);
 
                 try {
                   // ファイルをアップロード
@@ -357,7 +358,7 @@ class SlackService {
                 } finally {
                   // 一時ファイルを削除
                   try {
-                    await fs.promises.unlink(tempFilePath);
+                    await fsPromises.unlink(tempFilePath);
                   } catch (unlinkError) {
                     console.error('一時ファイルの削除に失敗:', unlinkError);
                   }
