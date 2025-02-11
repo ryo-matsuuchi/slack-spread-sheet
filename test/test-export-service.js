@@ -2,6 +2,7 @@ const { PDFDocument } = require('pdf-lib');
 const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs').promises;
+const { Readable } = require('stream');
 
 // テスト用の環境変数を読み込む
 const envPath = path.join(__dirname, '.env.test');
@@ -52,8 +53,54 @@ async function testExportExpenseReport() {
     const outputPath = path.join(OUTPUT_DIR, 'test-expense-report.pdf');
     await fs.writeFile(outputPath, mergedPdf);
 
+    // PDFをReadableストリームに変換してテスト
+    const stream = new Readable();
+    stream.push(mergedPdf);
+    stream.push(null);
+
+    // ストリームからデータを読み取り
+    const chunks = [];
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+    const streamedData = Buffer.concat(chunks);
+
+    // 元のバッファとストリームから読み取ったデータを比較
+    const isEqual = Buffer.compare(mergedPdf, streamedData) === 0;
+    if (!isEqual) {
+      throw new Error('ストリーム変換テストに失敗しました');
+    }
+
+    // 一時ファイルのテスト
+    const tempPath = path.join('/tmp', 'test-temp.pdf');
+    try {
+      // 一時ファイルに書き込み
+      await fs.writeFile(tempPath, mergedPdf);
+      console.log(`Temporary file created at: ${tempPath}`);
+
+      // ファイルが存在することを確認
+      const stats = await fs.stat(tempPath);
+      console.log(`Temporary file size: ${stats.size} bytes`);
+
+      // ファイルの内容を読み取って比較
+      const tempContent = await fs.readFile(tempPath);
+      const isEqual = Buffer.compare(mergedPdf, tempContent) === 0;
+      console.log(`Content comparison result: ${isEqual ? 'matched' : 'not matched'}`);
+
+    } finally {
+      // 一時ファイルを削除
+      try {
+        await fs.unlink(tempPath);
+        console.log('Temporary file deleted successfully');
+      } catch (unlinkError) {
+        console.error('Failed to delete temporary file:', unlinkError);
+      }
+    }
+
     console.log(`Test expense report saved to: ${outputPath}`);
     console.log('Export test completed successfully');
+    console.log('Stream conversion test passed');
+    console.log('Temporary file test completed');
     return true;
   } catch (error) {
     console.error('Export test failed:', error);
