@@ -484,7 +484,7 @@ class SlackService {
         debugLog('Metadata:', JSON.stringify(metadata, null, 2));
 
         // モーダルを閉じた後に非同期で処理を実行
-        setImmediate(async () => {
+        Promise.resolve().then(async () => {
           try {
             debugLog('Downloading file from URL:', fileUrl);
             // ファイルのダウンロード
@@ -594,7 +594,7 @@ class SlackService {
         await ack();
 
         // モーダルを閉じた後に非同期で処理を実行
-        setImmediate(async () => {
+        Promise.resolve().then(async () => {
           try {
             debugLog('Handling expense_direct_modal submission');
             debugLog('View payload:', JSON.stringify(view, null, 2));
