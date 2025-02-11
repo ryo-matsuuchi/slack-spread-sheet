@@ -3,6 +3,7 @@ const sheetsService = require('./sheetsService');
 const driveService = require('./driveService');
 const settingsService = require('./settingsService');
 const exportService = require('./exportService');
+const sessionService = require('./sessionService');
 const axios = require('axios');
 
 // デバッグログの設定
@@ -327,36 +328,51 @@ class SlackService {
               throw new Error('スプレッドシートが設定されていません。/keihi setup [スプレッドシートID] で設定してください。');
             }
 
+            // 処理状態をチェック
+            const stateMessage = sessionService.getUserStateMessage(command.user_id);
+            if (stateMessage) {
+              await client.chat.postMessage({
+                channel: command.user_id,
+                text: stateMessage
+              });
+              return;
+            }
+
             // 年月の取得（指定がない場合は現在の年月）
             const exportYearMonth = args[0] || new Date().toISOString().substring(0, 7);
             
+            // 処理状態を設定
+            sessionService.setUserState(command.user_id, 'exporting');
+
             // 即座に応答を返す
             const initialMessage = await client.chat.postMessage({
               channel: command.user_id,
               text: `${exportYearMonth}の経費精算書のPDF出力を開始しました。完了までしばらくお待ちください...`
             });
 
-            // 非同期でPDFを生成
-            exportService.exportExpenseReport(command.user_id, exportYearMonth)
-              .then(async ({ pdfBuffer, fileUrl }) => {
-                // 成功時：PDFをアップロードしてスレッドで通知
-                // 完了メッセージを返信
-                await client.chat.postMessage({
-                  channel: command.user_id,
-                  thread_ts: initialMessage.ts,
-                  text: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\n<${fileUrl}|PDFを開く> :page_facing_up:`
-                });
-              })
-              .catch(async (error) => {
-                // エラー時：スレッドでエラーを通知
-                await client.chat.postMessage({
-                  channel: command.user_id,
-                  thread_ts: initialMessage.ts,
-                  text: `PDFの出力中にエラーが発生しました: ${error.message}`
-                });
+            try {
+              // PDFを生成
+              const { pdfBuffer, fileUrl } = await exportService.exportExpenseReport(command.user_id, exportYearMonth);
+              
+              // 成功時：PDFをアップロードしてスレッドで通知
+              await client.chat.postMessage({
+                channel: command.user_id,
+                thread_ts: initialMessage.ts,
+                text: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\n<${fileUrl}|PDFを開く> :page_facing_up:`
               });
+            } catch (error) {
+              // エラー時：スレッドでエラーを通知
+              await client.chat.postMessage({
+                channel: command.user_id,
+                thread_ts: initialMessage.ts,
+                text: `PDFの出力中にエラーが発生しました: ${error.message}`
+              });
+            } finally {
+              // 処理状態をクリア
+              sessionService.setUserState(command.user_id, null);
+            }
 
-            debugLog('Export process started');
+            debugLog('Export process completed');
             return;
 
           default:
@@ -469,8 +485,23 @@ class SlackService {
           return;
         }
 
+        // 処理状態をチェック
+        const stateMessage = sessionService.getUserStateMessage(userId);
+        if (stateMessage) {
+          await ack({
+            response_action: 'errors',
+            errors: {
+              amount_block: stateMessage
+            }
+          });
+          return;
+        }
+
         // 即座に応答を返し、モーダルを閉じる
         await ack();
+
+        // 処理状態を設定
+        sessionService.setUserState(userId, 'creating');
 
         // 処理開始メッセージを送信
         const initialMessage = await client.chat.postMessage({
@@ -484,65 +515,67 @@ class SlackService {
         debugLog('Metadata:', JSON.stringify(metadata, null, 2));
 
         // モーダルを閉じた後に非同期で処理を実行
-        (async () => {
-          try {
-            debugLog('Downloading file from URL:', fileUrl);
-            // ファイルのダウンロード
-            const response = await axios.get(fileUrl, {
-              headers: {
-                'Authorization': `Bearer ${config.slack.botToken}`
-              },
-              responseType: 'arraybuffer'
-            });
+        try {
+          debugLog('Downloading file from URL:', fileUrl);
+          // ファイルのダウンロード
+          const response = await axios.get(fileUrl, {
+            headers: {
+              'Authorization': `Bearer ${config.slack.botToken}`
+            },
+            responseType: 'arraybuffer'
+          });
 
-            if (response.status !== 200) {
-              throw new Error('ファイルのダウンロードに失敗しました');
-            }
-
-            const fileContent = Buffer.from(response.data);
-
-            // Google Driveにアップロード
-            debugLog('Uploading file to Google Drive');
-            const driveFile = await driveService.uploadFile(
-              userId,
-              date.substring(0, 7), // YYYY-MM
-              fileContent,
-              fileName,
-              fileType
-            );
-
-            // スプレッドシートに登録
-            debugLog('Adding entry to spreadsheet');
-            const sheetResult = await sheetsService.addEntry({
-              userId: userId,
-              date: date,
-              amount: amount,
-              details: details || '（内容なし）',
-              memo: memo || '',
-              fileUrl: driveFile.webViewLink,
-            });
-
-            // 完了メッセージを送信
-            const baseMessage = `• 日付: ${date}\n• 金額: ¥${amount.toLocaleString()}\n• 内容: ${details || '（内容なし）'}\n• メモ: ${memo || '（なし）'}`;
-            const links = `\n\n<${sheetResult.sheetUrl}|スプレッドシートで開く> | <${driveFile.webViewLink}|領収書を確認>`;
-
-            debugLog('Sending completion message');
-            await client.chat.postMessage({
-              channel: userId,
-              thread_ts: initialMessage.ts,
-              text: sheetResult.success
-                ? `経費精算書を作成しました。\n${baseMessage}${links}`
-                : `${sheetResult.message}\n${baseMessage}\n\n経費精算書を確認: ${sheetResult.sheetUrl}`,
-            });
-
-          } catch (error) {
-            errorLog('Error processing expense:', error);
-            await client.chat.postMessage({
-              channel: userId,
-              thread_ts: initialMessage.ts,
-              text: `エラーが発生しました: ${error.message}`
-            });
+          if (response.status !== 200) {
+            throw new Error('ファイルのダウンロードに失敗しました');
           }
+
+          const fileContent = Buffer.from(response.data);
+
+          // Google Driveにアップロード
+          debugLog('Uploading file to Google Drive');
+          const driveFile = await driveService.uploadFile(
+            userId,
+            date.substring(0, 7), // YYYY-MM
+            fileContent,
+            fileName,
+            fileType
+          );
+
+          // スプレッドシートに登録
+          debugLog('Adding entry to spreadsheet');
+          const sheetResult = await sheetsService.addEntry({
+            userId: userId,
+            date: date,
+            amount: amount,
+            details: details || '（内容なし）',
+            memo: memo || '',
+            fileUrl: driveFile.webViewLink,
+          });
+
+          // 完了メッセージを送信
+          const baseMessage = `• 日付: ${date}\n• 金額: ¥${amount.toLocaleString()}\n• 内容: ${details || '（内容なし）'}\n• メモ: ${memo || '（なし）'}`;
+          const links = `\n\n<${sheetResult.sheetUrl}|スプレッドシートで開く> | <${driveFile.webViewLink}|領収書を確認>`;
+
+          debugLog('Sending completion message');
+          await client.chat.postMessage({
+            channel: userId,
+            thread_ts: initialMessage.ts,
+            text: sheetResult.success
+              ? `経費精算書を作成しました。\n${baseMessage}${links}`
+              : `${sheetResult.message}\n${baseMessage}\n\n経費精算書を確認: ${sheetResult.sheetUrl}`,
+          });
+
+        } catch (error) {
+          errorLog('Error processing expense:', error);
+          await client.chat.postMessage({
+            channel: userId,
+            thread_ts: initialMessage.ts,
+            text: `エラーが発生しました: ${error.message}`
+          });
+        } finally {
+          // 処理状態をクリア
+          sessionService.setUserState(userId, null);
+        }
         })();
 
       } catch (error) {
@@ -557,10 +590,11 @@ class SlackService {
 
     // ファイル添付なしのモーダル送信処理
     this.app.view('expense_direct_modal', async ({ ack, body, view, client }) => {
+      let userId;
       try {
         // 入力値を取得
         const metadata = JSON.parse(view.private_metadata);
-        const { userId } = metadata;
+        userId = metadata.userId;
         const values = view.state.values;
 
         const date = values.date_block.date_input.selected_date || new Date().toISOString().split('T')[0];
@@ -590,55 +624,67 @@ class SlackService {
           return;
         }
 
+        // 処理状態をチェック
+        const stateMessage = sessionService.getUserStateMessage(userId);
+        if (stateMessage) {
+          await ack({
+            response_action: 'errors',
+            errors: {
+              amount_block: stateMessage
+            }
+          });
+          return;
+        }
+
         // 即座に応答を返し、モーダルを閉じる
         await ack();
 
-        // モーダルを閉じた後に非同期で処理を実行
-        (async () => {
-          try {
-            debugLog('Handling expense_direct_modal submission');
-            debugLog('View payload:', JSON.stringify(view, null, 2));
-            debugLog('Body payload:', JSON.stringify(body, null, 2));
-            debugLog('Metadata:', JSON.stringify(metadata, null, 2));
+        // 処理状態を設定
+        sessionService.setUserState(userId, 'creating');
 
-            // スプレッドシートに登録
-            debugLog('Adding entry to spreadsheet');
-            const sheetResult = await sheetsService.addEntry({
-              userId: userId,
-              date: date,
-              amount: amount,
-              details: details || '（内容なし）',
-              memo: memo || '',
-              fileUrl: '', // ファイルなし
-            });
+        debugLog('Handling expense_direct_modal submission');
+        debugLog('View payload:', JSON.stringify(view, null, 2));
+        debugLog('Body payload:', JSON.stringify(body, null, 2));
+        debugLog('Metadata:', JSON.stringify(metadata, null, 2));
 
-            // 完了メッセージを送信
-            const baseMessage = `• 日付: ${date}\n• 金額: ¥${amount.toLocaleString()}\n• 内容: ${details || '（内容なし）'}\n• メモ: ${memo || '（なし）'}`;
-            const links = `\n\n<${sheetResult.sheetUrl}|スプレッドシートで開く>`;
+        // スプレッドシートに登録
+        debugLog('Adding entry to spreadsheet');
+        const sheetResult = await sheetsService.addEntry({
+          userId: userId,
+          date: date,
+          amount: amount,
+          details: details || '（内容なし）',
+          memo: memo || '',
+          fileUrl: '', // ファイルなし
+        });
 
-            debugLog('Sending completion message');
-            await client.chat.postMessage({
-              channel: userId,
-              text: sheetResult.success
-                ? `経費精算書を作成しました。\n${baseMessage}${links}`
-                : `${sheetResult.message}\n${baseMessage}\n\n経費精算書を確認: ${sheetResult.sheetUrl}`,
-            });
-          } catch (error) {
-            errorLog('Error processing expense:', error);
-            await client.chat.postMessage({
-              channel: userId,
-              text: `エラーが発生しました: ${error.message}`
-            });
-          }
-        })();
+        // 完了メッセージを送信
+        const baseMessage = `• 日付: ${date}\n• 金額: ¥${amount.toLocaleString()}\n• 内容: ${details || '（内容なし）'}\n• メモ: ${memo || '（なし）'}`;
+        const links = `\n\n<${sheetResult.sheetUrl}|スプレッドシートで開く>`;
+
+        debugLog('Sending completion message');
+        await client.chat.postMessage({
+          channel: userId,
+          text: sheetResult.success
+            ? `経費精算書を作成しました。\n${baseMessage}${links}`
+            : `${sheetResult.message}\n${baseMessage}\n\n経費精算書を確認: ${sheetResult.sheetUrl}`,
+        });
 
       } catch (error) {
         errorLog('Error processing expense:', error);
-        const metadata = JSON.parse(view.private_metadata);
-        await client.chat.postMessage({
-          channel: metadata.userId,
-          text: `エラーが発生しました: ${error.message}`
-        });
+        try {
+          await client.chat.postMessage({
+            channel: userId || JSON.parse(view.private_metadata).userId,
+            text: `エラーが発生しました: ${error.message}`
+          });
+        } catch (msgError) {
+          errorLog('Error sending error message:', msgError);
+        }
+      } finally {
+        if (userId) {
+          // 処理状態をクリア
+          sessionService.setUserState(userId, null);
+        }
       }
     });
 
