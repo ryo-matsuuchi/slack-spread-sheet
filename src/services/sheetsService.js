@@ -240,13 +240,16 @@ class SheetsService {
       // シートを取得または作成
       const sheet = await this.getOrCreateSheet(userId, yearMonth);
 
+      const sheetTitle = sheet.title;
+      debugLog(`Using sheet: ${sheetTitle} for adding entry`);
+
       // 空き行を検索
-      const rowNumber = await this.findEmptyRow(spreadsheetId, sheet.title);
+      const rowNumber = await this.findEmptyRow(spreadsheetId, sheetTitle);
 
       // データを追加（B-E列）
       await this.sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${sheet.title}!B${rowNumber}:E${rowNumber}`,
+        range: `'${sheetTitle}'!B${rowNumber}:E${rowNumber}`,
         valueInputOption: 'USER_ENTERED',
         resource: {
           values: [[
@@ -262,7 +265,7 @@ class SheetsService {
       if (fileUrl) {
         await this.sheets.spreadsheets.values.update({
           spreadsheetId,
-          range: `${sheet.title}!G${rowNumber}`,
+          range: `'${sheetTitle}'!G${rowNumber}`,
           valueInputOption: 'USER_ENTERED',
           resource: {
             values: [[fileUrl]]
