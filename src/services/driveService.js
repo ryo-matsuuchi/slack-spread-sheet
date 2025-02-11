@@ -1,5 +1,6 @@
 const { google } = require('googleapis');
 const settingsService = require('./settingsService');
+const { Readable } = require('stream');
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -173,9 +174,14 @@ class DriveService {
         parents: [monthFolderId],
       };
 
+      // BufferをReadableストリームに変換
+      const stream = new Readable();
+      stream.push(content);
+      stream.push(null);
+
       const media = {
         mimeType: mimeType,
-        body: content,
+        body: stream,
       };
 
       debugLog('Creating file in Drive');
