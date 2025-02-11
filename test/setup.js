@@ -1,3 +1,5 @@
+const { jest, afterAll } = require('@jest/globals');
+
 // テスト用の環境変数を設定
 process.env.GOOGLE_CLIENT_EMAIL = 'test@example.com';
 process.env.GOOGLE_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\nMIIE...test...key\n-----END PRIVATE KEY-----\n';
