@@ -30,12 +30,13 @@ class PDFService {
       const a4Height = 842;
       const margin = 40;
 
-      // 画像をリサイズ
-      const image = await sharp(imageBuffer)
+      // 画像をリサイズしてPNG形式に変換
+      const pngImage = await sharp(imageBuffer)
         .resize(a4Width - (margin * 2), a4Height - (margin * 2), {
           fit: 'inside',
           withoutEnlargement: true
         })
+        .png()
         .toBuffer();
 
       // PDFドキュメントの作成
@@ -43,11 +44,11 @@ class PDFService {
       const page = pdfDoc.addPage([a4Width, a4Height]);
 
       // 画像の埋め込み
-      const pdfImage = await pdfDoc.embedJpeg(image);
-      const { width, height } = pdfImage.scale(1);
+      const image = await pdfDoc.embedPng(pngImage);
+      const { width, height } = image.scale(1);
 
       // 画像をページの中央に配置
-      page.drawImage(pdfImage, {
+      page.drawImage(image, {
         x: (a4Width - width) / 2,
         y: (a4Height - height) / 2,
         width,
@@ -64,10 +65,9 @@ class PDFService {
   /**
    * PDFファイルを結合する
    * @param {Buffer[]} pdfBuffers PDFのバッファ配列
-   * @param {Object[]} bookmarks しおり情報の配列 [{title: string, pageNumber: number}]
    * @returns {Promise<Buffer>} 結合したPDFのバッファ
    */
-  async mergePDFs(pdfBuffers, bookmarks = []) {
+  async mergePDFs(pdfBuffers) {
     try {
       debugLog('Merging PDFs');
       
@@ -107,113 +107,10 @@ class PDFService {
         });
       });
 
-      // しおりの追加
-      if (bookmarks.length > 0) {
-        try {
-          debugLog('Adding bookmarks');
-          
-          // アウトラインツリーの作成
-          const outlines = mergedPdf.context.obj({});
-          mergedPdf.catalog.set(mergedPdf.context.obj('Outlines'), outlines);
-
-          // しおりの追加
-          let lastOutline = null;
-          for (const { title, pageNumber } of bookmarks) {
-            if (pageNumber > 0 && pageNumber <= pageRefs.length) {
-              const page = pageRefs[pageNumber - 1];
-              const outline = mergedPdf.context.obj({
-                Title: title,
-                Parent: outlines,
-                Dest: [page.ref, 'XYZ', null, page.getHeight(), null],
-              });
-
-              if (!lastOutline) {
-                outlines.set('First', outline);
-              } else {
-                lastOutline.set('Next', outline);
-                outline.set('Prev', lastOutline);
-              }
-
-              lastOutline = outline;
-            }
-          }
-
-          if (lastOutline) {
-            outlines.set('Last', lastOutline);
-          }
-
-          // アウトラインのカウントを設定
-          outlines.set('Count', bookmarks.length);
-        } catch (error) {
-          errorLog('Error adding bookmarks:', error);
-          // しおりの追加に失敗しても、PDFの結合自体は続行
-        }
-      }
-
       return await mergedPdf.save();
     } catch (error) {
       errorLog('Error merging PDFs:', error);
       throw new Error('PDFの結合に失敗しました。');
-    }
-  }
-
-  /**
-   * PDFにしおりを追加する
-   * @param {Buffer} pdfBuffer PDFのバッファ
-   * @param {Object[]} bookmarks しおり情報の配列 [{title: string, pageNumber: number}]
-   * @returns {Promise<Buffer>} しおりを追加したPDFのバッファ
-   */
-  async addBookmarks(pdfBuffer, bookmarks) {
-    try {
-      debugLog('Adding bookmarks');
-      
-      const pdfDoc = await PDFDocument.load(pdfBuffer);
-      const pages = pdfDoc.getPages();
-
-      if (bookmarks.length > 0) {
-        try {
-          // アウトラインツリーの作成
-          const outlines = pdfDoc.context.obj({});
-          pdfDoc.catalog.set(pdfDoc.context.obj('Outlines'), outlines);
-
-          // しおりの追加
-          let lastOutline = null;
-          for (const { title, pageNumber } of bookmarks) {
-            if (pageNumber > 0 && pageNumber <= pages.length) {
-              const page = pages[pageNumber - 1];
-              const outline = pdfDoc.context.obj({
-                Title: title,
-                Parent: outlines,
-                Dest: [page.ref, 'XYZ', null, page.getHeight(), null],
-              });
-
-              if (!lastOutline) {
-                outlines.set('First', outline);
-              } else {
-                lastOutline.set('Next', outline);
-                outline.set('Prev', lastOutline);
-              }
-
-              lastOutline = outline;
-            }
-          }
-
-          if (lastOutline) {
-            outlines.set('Last', lastOutline);
-          }
-
-          // アウトラインのカウントを設定
-          outlines.set('Count', bookmarks.length);
-        } catch (error) {
-          errorLog('Error adding bookmarks:', error);
-          throw new Error('しおりの追加に失敗しました。');
-        }
-      }
-
-      return await pdfDoc.save();
-    } catch (error) {
-      errorLog('Error adding bookmarks:', error);
-      throw new Error('しおりの追加に失敗しました。');
     }
   }
 

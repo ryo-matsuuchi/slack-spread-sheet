@@ -52,6 +52,34 @@ class ExportService {
   }
 
   /**
+   * シートIDを取得する
+   * @param {string} spreadsheetId スプレッドシートID
+   * @param {string} sheetName シート名
+   * @returns {Promise<string>} シートID
+   */
+  async getSheetId(spreadsheetId, sheetName) {
+    try {
+      const response = await this.sheets.spreadsheets.get({
+        spreadsheetId: spreadsheetId,
+        fields: 'sheets.properties'
+      });
+
+      const sheet = response.data.sheets.find(
+        s => s.properties.title === sheetName
+      );
+
+      if (!sheet) {
+        throw new Error(`シート "${sheetName}" が見つかりません。`);
+      }
+
+      return sheet.properties.sheetId.toString();
+    } catch (error) {
+      errorLog('Error getting sheet ID:', error);
+      throw new Error('シートIDの取得に失敗しました。');
+    }
+  }
+
+  /**
    * スプレッドシートをPDFとしてエクスポート
    * @param {string} spreadsheetId スプレッドシートID
    * @param {string} sheetName シート名
@@ -61,12 +89,15 @@ class ExportService {
     try {
       debugLog(`Exporting sheet to PDF: ${sheetName}`);
 
+      // シートIDの取得
+      const sheetId = await this.getSheetId(spreadsheetId, sheetName);
+
       // PDFエクスポートのURLを構築
       const token = await this.auth.getAccessToken();
       const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export`;
       const params = new URLSearchParams({
         format: 'pdf',
-        gid: '0', // シートIDは0を使用（最初のシート）
+        gid: sheetId,
         size: 'A4',
         portrait: 'true',
         fitw: 'true',
@@ -161,8 +192,6 @@ class ExportService {
       // 領収書の取得と変換
       const receipts = await this.getMonthlyReceipts(userId, yearMonth);
       const receiptPdfs = [];
-      const bookmarks = [{ title: '経費精算書', pageNumber: 1 }];
-      let pageNumber = 2;
 
       for (const receipt of receipts) {
         const fileBuffer = await this.downloadReceipt(receipt.id);
@@ -175,15 +204,11 @@ class ExportService {
         }
 
         receiptPdfs.push(pdfBuffer);
-        bookmarks.push({
-          title: `領収書: ${receipt.name}`,
-          pageNumber: pageNumber++
-        });
       }
 
       // PDFの結合
       const allPdfs = [sheetPdf, ...receiptPdfs];
-      const mergedPdf = await pdfService.mergePDFs(allPdfs, bookmarks);
+      const mergedPdf = await pdfService.mergePDFs(allPdfs);
 
       // 結合したPDFを保存
       const folderId = await driveService.getOrCreateMonthFolder(userId, yearMonth);
