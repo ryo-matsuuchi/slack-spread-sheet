@@ -108,7 +108,7 @@ class ExportService {
         left_margin: '0.5',
         right_margin: '0.5',
         sheetnames: 'false',
-        range: `${sheetName}!A1:E27`
+        range: `${sheetName}!A1:E33`
       });
 
       // PDFをダウンロード

@@ -73,16 +73,14 @@ class PDFService {
       
       // 新しいPDFドキュメントの作成
       const mergedPdf = await PDFDocument.create();
-      const helveticaFont = await mergedPdf.embedFont(StandardFonts.Helvetica);
 
       // 各PDFを結合
-      const pageRefs = [];
       for (const pdfBuffer of pdfBuffers) {
         try {
           const pdf = await PDFDocument.load(pdfBuffer);
           const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
           copiedPages.forEach(page => {
-            pageRefs.push(mergedPdf.addPage(page));
+            mergedPdf.addPage(page);
           });
         } catch (error) {
           errorLog('Error copying PDF:', error);
@@ -91,21 +89,10 @@ class PDFService {
         }
       }
 
-      // ページ番号の追加
-      if (pageRefs.length === 0) {
+      // ページが存在しない場合はエラー
+      if (mergedPdf.getPageCount() === 0) {
         throw new Error('有効なPDFページがありません。');
       }
-
-      pageRefs.forEach((page, index) => {
-        const { width, height } = page.getSize();
-        page.drawText(`${index + 1} / ${pageRefs.length}`, {
-          x: width - 60,
-          y: 30,
-          size: 10,
-          font: helveticaFont,
-          color: rgb(0.5, 0.5, 0.5),
-        });
-      });
 
       return await mergedPdf.save();
     } catch (error) {
