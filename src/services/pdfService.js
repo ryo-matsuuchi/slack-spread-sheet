@@ -55,10 +55,11 @@ class PDFService {
         height,
       });
 
-      return await pdfDoc.save();
+      const pdfBytes = await pdfDoc.save();
+      return Buffer.from(pdfBytes);
     } catch (error) {
       errorLog('Error converting image to PDF:', error);
-      throw new Error('画像のPDF変換に失敗しました。');
+      throw new Error('Error converting image to PDF');
     }
   }
 
@@ -94,10 +95,14 @@ class PDFService {
         throw new Error('有効なPDFページがありません。');
       }
 
-      return await mergedPdf.save();
+      const pdfBytes = await mergedPdf.save();
+      return Buffer.from(pdfBytes);
     } catch (error) {
       errorLog('Error merging PDFs:', error);
-      throw new Error('PDFの結合に失敗しました。');
+      if (pdfBuffers.length === 0) {
+        throw new Error('No PDFs to merge');
+      }
+      throw new Error('Error merging PDFs');
     }
   }
 
