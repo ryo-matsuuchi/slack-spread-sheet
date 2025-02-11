@@ -101,14 +101,18 @@ class ExportService {
         size: 'A4',
         portrait: 'true',
         fitw: 'true',
+        scale: '4', // スケールを調整して1ページに収める
         gridlines: 'false',
         printtitle: 'false',
-        top_margin: '0.5',
-        bottom_margin: '0.5',
-        left_margin: '0.5',
-        right_margin: '0.5',
+        top_margin: '0.25', // マージンを小さくする
+        bottom_margin: '0.25',
+        left_margin: '0.25',
+        right_margin: '0.25',
         sheetnames: 'false',
-        range: `${sheetName}!A1:E33`
+        range: `${sheetName}!A1:E33`,
+        fzr: 'false', // 行を固定しない
+        fzc: 'false', // 列を固定しない
+        pagenum: 'false', // ページ番号を表示しない
       });
 
       // PDFをダウンロード
