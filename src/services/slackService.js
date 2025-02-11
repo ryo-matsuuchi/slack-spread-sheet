@@ -630,7 +630,7 @@ class SlackService {
               text: `エラーが発生しました: ${error.message}`
             });
           }
-        });
+        })();
 
       } catch (error) {
         errorLog('Error processing expense:', error);
