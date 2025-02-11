@@ -629,6 +629,7 @@ class SlackService {
             debugLog('Sending completion message');
             await client.chat.postMessage({
               channel: userId,
+              thread_ts: initialMessage.ts,
               text: sheetResult.success
                 ? `経費精算書を作成しました。\n${baseMessage}${links}`
                 : `${sheetResult.message}\n${baseMessage}\n\n経費精算書を確認: ${sheetResult.sheetUrl}`,
@@ -637,6 +638,7 @@ class SlackService {
             errorLog('Error in async process:', processError);
             await client.chat.postMessage({
               channel: userId,
+              thread_ts: initialMessage.ts,
               text: `エラーが発生しました: ${processError.message}`
             });
           }
