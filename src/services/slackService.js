@@ -4,7 +4,6 @@ const driveService = require('./driveService');
 const settingsService = require('./settingsService');
 const exportService = require('./exportService');
 const axios = require('axios');
-const { Readable } = require('stream');
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -341,31 +340,12 @@ class SlackService {
             exportService.exportExpenseReport(command.user_id, exportYearMonth)
               .then(async ({ pdfBuffer, fileUrl }) => {
                 // 成功時：PDFをアップロードしてスレッドで通知
-                // まずGoogleドライブのリンクを返信
-                const message = await client.chat.postMessage({
+                // 完了メッセージを返信
+                await client.chat.postMessage({
                   channel: command.user_id,
                   thread_ts: initialMessage.ts,
-                  text: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\n<${fileUrl}|Google Driveで開く>`
+                  text: `${exportYearMonth}の経費精算書をPDFに出力しました。\n\n<${fileUrl}|PDFを開く> :page_facing_up:`
                 });
-
-                // 同じスレッドにファイルを添付
-                try {
-                  // PDFバッファをReadableストリームに変換
-                  const stream = new Readable();
-                  stream.push(pdfBuffer);
-                  stream.push(null);
-
-                  await client.files.uploadV2({
-                    channel_id: command.user_id,
-                    thread_ts: message.ts,
-                    filename: `経費精算書_${exportYearMonth}.pdf`,
-                    file: stream
-                  });
-                } catch (uploadError) {
-                  console.error('ファイルのアップロードに失敗:', uploadError);
-                  // ファイルのアップロードに失敗してもエラーは投げない
-                  // ユーザーはGoogleドライブのリンクから取得可能
-                }
               })
               .catch(async (error) => {
                 // エラー時：スレッドでエラーを通知
