@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 const settingsService = require('./settingsService');
 const { Readable } = require('stream');
+const { OperationError } = require('../utils/errors');
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -14,15 +15,6 @@ const errorLog = (message, error) => {
     console.error(error.stack);
   }
 };
-
-class DriveError extends Error {
-  constructor(message, userId, operation) {
-    super(message);
-    this.name = 'DriveError';
-    this.userId = userId;
-    this.operation = operation;
-  }
-}
 
 class DriveService {
   constructor() {
@@ -107,7 +99,7 @@ class DriveService {
       return folderId;
     } catch (error) {
       errorLog('Ensure folder error:', error);
-      throw new DriveError(
+      throw new OperationError(
         `フォルダの作成に失敗しました: ${name}`,
         userId,
         'ensureFolder'
@@ -144,7 +136,7 @@ class DriveService {
       return monthFolderId;
     } catch (error) {
       errorLog('Get/Create month folder error:', error);
-      throw new DriveError(
+      throw new OperationError(
         '年月フォルダの取得/作成に失敗しました。',
         userId,
         'getOrCreateMonthFolder'
@@ -179,7 +171,7 @@ class DriveService {
       }
     } catch (error) {
       errorLog('Delete file error:', error);
-      throw new DriveError(
+      throw new OperationError(
         'ファイルの削除に失敗しました。',
         null,
         'deleteFileByName'
@@ -236,7 +228,7 @@ class DriveService {
       };
     } catch (error) {
       errorLog('Upload file error:', error);
-      throw new DriveError(
+      throw new OperationError(
         'ファイルのアップロードに失敗しました。',
         userId,
         'uploadFile'

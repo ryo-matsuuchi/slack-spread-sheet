@@ -1,4 +1,5 @@
 const { google } = require('googleapis');
+const { SettingsError } = require('../utils/errors');
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -12,14 +13,6 @@ const errorLog = (message, error) => {
     console.error(error.stack);
   }
 };
-
-class SettingsError extends Error {
-  constructor(message, userId) {
-    super(message);
-    this.name = 'SettingsError';
-    this.userId = userId;
-  }
-}
 
 class SettingsService {
   constructor() {

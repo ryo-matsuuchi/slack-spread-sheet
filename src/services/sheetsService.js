@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 const settingsService = require('./settingsService');
 const driveService = require('./driveService');
+const { OperationError } = require('../utils/errors');
 
 // デバッグログの設定
 const debugLog = (message, ...args) => {
@@ -14,15 +15,6 @@ const errorLog = (message, error) => {
     console.error(error.stack);
   }
 };
-
-class SheetsError extends Error {
-  constructor(message, userId, operation) {
-    super(message);
-    this.name = 'SheetsError';
-    this.userId = userId;
-    this.operation = operation;
-  }
-}
 
 class SheetsService {
   constructor() {
@@ -119,7 +111,7 @@ class SheetsService {
       debugLog('Creating new sheet from _base at index 0');
       const baseSheet = sheets.find(s => s.properties.title === '_base');
       if (!baseSheet) {
-        throw new SheetsError('_baseシートが見つかりません。', userId, 'getOrCreateSheet');
+        throw new OperationError('_baseシートが見つかりません。', userId, 'getOrCreateSheet');
       }
 
       const result = await this.sheets.spreadsheets.batchUpdate({
@@ -169,7 +161,7 @@ class SheetsService {
       };
     } catch (error) {
       errorLog('Error in getOrCreateSheet:', error);
-      throw new SheetsError(
+      throw new OperationError(
         'シートの取得/作成に失敗しました。',
         userId,
         'getOrCreateSheet'
@@ -281,7 +273,7 @@ class SheetsService {
       };
     } catch (error) {
       errorLog('Error adding entry:', error);
-      throw new SheetsError(
+      throw new OperationError(
         error.message || 'エントリーの追加に失敗しました。',
         userId,
         'addEntry'
@@ -338,7 +330,7 @@ class SheetsService {
       };
     } catch (error) {
       errorLog('Error getting status:', error);
-      throw new SheetsError(
+      throw new OperationError(
         'ステータスの取得に失敗しました。',
         userId,
         'getStatus'
@@ -396,7 +388,7 @@ class SheetsService {
       };
     } catch (error) {
       errorLog('Error getting list:', error);
-      throw new SheetsError(
+      throw new OperationError(
         '一覧の取得に失敗しました。',
         userId,
         'getList'
