@@ -468,8 +468,9 @@ class SlackService {
           return;
         }
 
-        // 即座に応答を返し、モーダルを閉じる
+        // モーダルを閉じる
         await ack();
+        debugLog('Modal closed');
 
         // 処理開始メッセージを送信
         const initialMessage = await client.chat.postMessage({
@@ -581,8 +582,15 @@ class SlackService {
           return;
         }
 
-        // 即座に応答を返し、モーダルを閉じる
+        // モーダルを閉じる
         await ack();
+        debugLog('Modal closed');
+
+        // 処理開始メッセージを送信
+        const initialMessage = await client.chat.postMessage({
+          channel: userId,
+          text: '経費精算書の作成を開始しました。完了までしばらくお待ちください...'
+        });
 
         debugLog('Handling expense_direct_modal submission');
         debugLog('View payload:', JSON.stringify(view, null, 2));
