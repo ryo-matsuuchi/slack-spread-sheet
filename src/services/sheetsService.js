@@ -147,7 +147,7 @@ class SheetsService {
       await Promise.all([
         this.sheets.spreadsheets.values.update({
           spreadsheetId,
-          range: `${sheetName}!D3`,
+          range: `'${sheetName}'!D3`,
           valueInputOption: 'USER_ENTERED',
           resource: {
             values: [[this.formatDate(firstDay, true)]]
@@ -155,7 +155,7 @@ class SheetsService {
         }),
         this.sheets.spreadsheets.values.update({
           spreadsheetId,
-          range: `${sheetName}!G3`,
+          range: `'${sheetName}'!G3`,
           valueInputOption: 'USER_ENTERED',
           resource: {
             values: [[`=HYPERLINK("${folderUrl}", "領収書フォルダ")`]]
@@ -165,7 +165,7 @@ class SheetsService {
 
       return {
         sheetId: newSheet.sheetId,
-        title: newSheet.title
+        title: sheetName // newSheet.titleではなくsheetNameを使用
       };
     } catch (error) {
       errorLog('Error in getOrCreateSheet:', error);
@@ -307,11 +307,11 @@ class SheetsService {
       const [entriesResponse, totalResponse] = await Promise.all([
         this.sheets.spreadsheets.values.get({
           spreadsheetId,
-          range: `${sheet.title}!B2:C26`
+          range: `'${sheet.title}'!B2:C26`
         }),
         this.sheets.spreadsheets.values.get({
           spreadsheetId,
-          range: `${sheet.title}!C27`
+          range: `'${sheet.title}'!C27`
         })
       ]);
 
@@ -365,11 +365,11 @@ class SheetsService {
       const [entriesResponse, totalResponse] = await Promise.all([
         this.sheets.spreadsheets.values.get({
           spreadsheetId,
-          range: `${sheet.title}!B2:D26`
+          range: `'${sheet.title}'!B2:D26`
         }),
         this.sheets.spreadsheets.values.get({
           spreadsheetId,
-          range: `${sheet.title}!C27`
+          range: `'${sheet.title}'!C27`
         })
       ]);
 
