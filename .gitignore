@@ -31,6 +31,7 @@ temp/
 # Test data
 test/data/*
 !test/data/.gitkeep
+test/output/
 
 # IDE
 .idea/
