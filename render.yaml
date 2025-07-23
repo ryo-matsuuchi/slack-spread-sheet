@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: slack2keihi
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    branch: main
+    rootDir: .
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        generateValue: true
+    # Environment variables to be set manually in Render Dashboard:
+    # SLACK_BOT_TOKEN
+    # SLACK_SIGNING_SECRET  
+    # SLACK_APP_TOKEN
+    # GOOGLE_CLOUD_PROJECT
+    # GOOGLE_CLIENT_EMAIL
+    # GOOGLE_PRIVATE_KEY
+    # SPREADSHEET_TEMPLATE_ID
+    # GOOGLE_WORKSPACE_DOMAIN
+    # API_TOKEN
+    # MAX_CONCURRENT_PROCESSES (optional)
+    # BATCH_SIZE (optional)

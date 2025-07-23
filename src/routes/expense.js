@@ -17,7 +17,7 @@ const authenticateRequest = (req, res, next) => {
   }
 
   const token = authHeader.split(' ')[1];
-  if (token !== config.glitch.apiToken) {
+  if (token !== process.env.API_TOKEN) {
     return res.status(403).json({ error: '無効なトークンです' });
   }
 

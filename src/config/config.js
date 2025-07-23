@@ -30,11 +30,9 @@ module.exports = {
     batchSize: parseInt(process.env.BATCH_SIZE) || 10,
   },
 
-  glitch: {
-    isGlitch: process.env.PROJECT_DOMAIN !== undefined,
+  server: {
     maxFileSize: 50 * 1024 * 1024, // 50MB
-    tempDir: process.env.PROJECT_DOMAIN ? '/app/tmp' : 'tmp',
+    tempDir: process.env.NODE_ENV === 'production' ? '/tmp' : 'tmp',
     cleanupInterval: 5 * 60 * 1000, // 5分ごとにクリーンアップ
-    apiToken: process.env.GLITCH_API_TOKEN,
   },
 };

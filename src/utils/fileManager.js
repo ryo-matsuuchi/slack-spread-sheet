@@ -4,7 +4,7 @@ const config = require('../config/config');
 
 class FileManager {
   constructor() {
-    this.tempDir = config.glitch.isGlitch ? config.glitch.tempDir : path.join(__dirname, '../../tmp');
+    this.tempDir = config.server.tempDir === '/tmp' ? '/tmp' : path.join(__dirname, '../../tmp');
     this.init();
     this.startCleanupInterval();
   }
@@ -63,13 +63,13 @@ class FileManager {
   }
 
   startCleanupInterval() {
-    // Glitch環境の場合のみ定期クリーンアップを実行
-    if (config.glitch.isGlitch) {
+    // 本番環境の場合のみ定期クリーンアップを実行
+    if (process.env.NODE_ENV === 'production') {
       setInterval(() => {
         this.cleanupTempFiles().catch(console.error);
-      }, config.glitch.cleanupInterval);
+      }, config.server.cleanupInterval);
       
-      console.log(`Cleanup interval started: ${config.glitch.cleanupInterval}ms`);
+      console.log(`Cleanup interval started: ${config.server.cleanupInterval}ms`);
     }
   }
 
@@ -77,7 +77,7 @@ class FileManager {
   async checkFileSize(filePath) {
     try {
       const stats = await fs.stat(filePath);
-      if (stats.size > config.glitch.maxFileSize) {
+      if (stats.size > config.server.maxFileSize) {
         throw new Error(`File size exceeds limit: ${stats.size} bytes`);
       }
       return true;

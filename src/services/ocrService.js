@@ -32,9 +32,7 @@ class OCRService {
       }
 
       // ファイルサイズチェック
-      if (config.glitch.isGlitch) {
-        await fileManager.checkFileSize(image);
-      }
+      await fileManager.checkFileSize(image);
 
       const [result] = await this.client.documentTextDetection(image);
       const fullText = result.fullTextAnnotation.text;
