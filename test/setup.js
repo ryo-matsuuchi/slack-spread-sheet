@@ -1,3 +1,4 @@
+// injectGlobals:false のため jest / afterAll は @jest/globals から明示的にimportする
 const { jest, afterAll } = require('@jest/globals');
 
 // テスト用の環境変数を設定

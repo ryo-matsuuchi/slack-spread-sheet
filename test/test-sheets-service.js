@@ -34,10 +34,16 @@ const mockSheets = {
     }),
     values: {
       get: async ({ range }) => {
-        if (range.includes('A2:A26')) {
+        // No列（findEmptyRow用）: A2:A27
+        if (range.includes('A2:A27')) {
           return { data: { values: [['1'], ['2'], ['3']] } };
         }
-        if (range.includes('B2:E26')) {
+        // 合計セル（新フォーマット）: C28
+        if (range.includes('C28')) {
+          return { data: { values: [['3000']] } };
+        }
+        // 明細データ（B列起点の範囲: B2:C27 / B2:D27 / B2:E27 等）
+        if (range.includes('!B2:')) {
           return {
             data: {
               values: [
@@ -47,9 +53,6 @@ const mockSheets = {
               ]
             }
           };
-        }
-        if (range.includes('C27')) {
-          return { data: { values: [['3000']] } };
         }
         return { data: { values: [] } };
       },
@@ -72,23 +75,21 @@ const mockSheets = {
   }
 };
 
-// settingsServiceのモック
-jest.mock('../src/services/settingsService', () => ({
-  getSpreadsheetId: async () => TEST_SPREADSHEET_ID
-}));
-
-// driveServiceのモック
-jest.mock('../src/services/driveService', () => ({
-  getOrCreateMonthFolder: async () => 'test_folder_id'
-}));
-
-// sheetsServiceのsheetsプロパティを一時的にモックに置き換える
+// settingsService / driveService はシングルトンのインスタンス。
+// transform:{} 環境では jest.mock の巻き上げが効かないため、
+// 各テスト前にメソッドを直接差し替え、afterEachで元に戻す。
 const originalSheets = sheetsService.sheets;
+const originalGetSpreadsheetId = settingsService.getSpreadsheetId;
+const originalGetOrCreateMonthFolder = driveService.getOrCreateMonthFolder;
 beforeEach(() => {
   sheetsService.sheets = mockSheets;
+  settingsService.getSpreadsheetId = async () => TEST_SPREADSHEET_ID;
+  driveService.getOrCreateMonthFolder = async () => 'test_folder_id';
 });
 afterEach(() => {
   sheetsService.sheets = originalSheets;
+  settingsService.getSpreadsheetId = originalGetSpreadsheetId;
+  driveService.getOrCreateMonthFolder = originalGetOrCreateMonthFolder;
 });
 
 describe('SheetsService', () => {
@@ -166,7 +167,8 @@ describe('SheetsService', () => {
   describe('findEmptyRow', () => {
     it('should find first empty row', async () => {
       const rowNumber = await sheetsService.findEmptyRow(TEST_SPREADSHEET_ID, TEST_SHEET_NAME);
-      assert.strictEqual(rowNumber, 3); // 3行目が空き行
+      // モックはNo=1,2が入力済み・3件目(No=3)が空。範囲先頭A2基準でindex2→4行目が空き行
+      assert.strictEqual(rowNumber, 4);
     });
 
     it('should throw error when no empty row found', async () => {
@@ -223,6 +225,55 @@ describe('SheetsService', () => {
       assert.strictEqual(list.entries.length, 2);
       assert.strictEqual(list.total, 3000);
       assert(list.sheetUrl.includes(TEST_SPREADSHEET_ID));
+    });
+  });
+
+  // 旧フォーマットのシート（合計C27・データ7〜26行）でも正しく読めることを保証する。
+  // 合計行はラベルがA列・B列が空のため明細(B列起点)に含まれず、二重計上されない。
+  // 合計セルC28は旧シートでは空になるため、明細合算へフォールバックする。
+  describe('旧フォーマット互換', () => {
+    // 旧フォーマットを模したモック（C28は空、明細範囲に合計行(B空)が混入）
+    const oldFormatSheets = {
+      spreadsheets: {
+        get: mockSheets.spreadsheets.get,
+        values: {
+          get: async ({ range }) => {
+            if (range.includes('C28')) {
+              return { data: { values: [] } }; // 旧シートはC28が空
+            }
+            if (range.includes('!B2:')) {
+              return {
+                data: {
+                  values: [
+                    ['2025-02-01', '1000', '支出1'],
+                    ['2025-02-02', '2000', '支出2'],
+                    ['', '110319', ''] // 合計行: B列が空 → 明細から除外されるべき
+                  ]
+                }
+              };
+            }
+            return { data: { values: [] } };
+          },
+          update: async () => ({})
+        },
+        batchUpdate: mockSheets.spreadsheets.batchUpdate
+      }
+    };
+
+    beforeEach(() => {
+      sheetsService.sheets = oldFormatSheets;
+    });
+
+    it('getStatus: C28が空でも明細合算で合計を算出し、合計行を除外する', async () => {
+      const status = await sheetsService.getStatus(TEST_USER_ID, '2025-02');
+      assert.strictEqual(status.count, 2);    // 合計行(B空)は除外
+      assert.strictEqual(status.total, 3000); // 110319は含めず明細合算
+    });
+
+    it('getList: C28が空でも明細合算で合計を算出し、合計行を除外する', async () => {
+      const list = await sheetsService.getList(TEST_USER_ID, '2025-02');
+      assert.strictEqual(list.entries.length, 2);
+      assert.strictEqual(list.total, 3000);
     });
   });
 });
