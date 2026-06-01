@@ -45,18 +45,18 @@ const mockDrive = {
   }
 };
 
-// settingsServiceのモック
-jest.mock('../src/services/settingsService', () => ({
-  getUserEmail: async () => TEST_EMAIL
-}));
-
-// driveServiceのdriveプロパティを一時的にモックに置き換える
+// settingsService はシングルトンのインスタンス。
+// transform:{} 環境では jest.mock の巻き上げが効かないため、
+// 各テスト前にメソッドを直接差し替え、afterEachで元に戻す。
 const originalDrive = driveService.drive;
+const originalGetUserEmail = settingsService.getUserEmail;
 beforeEach(() => {
   driveService.drive = mockDrive;
+  settingsService.getUserEmail = async () => TEST_EMAIL;
 });
 afterEach(() => {
   driveService.drive = originalDrive;
+  settingsService.getUserEmail = originalGetUserEmail;
 });
 
 describe('DriveService', () => {

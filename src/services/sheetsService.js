@@ -182,23 +182,26 @@ class SheetsService {
 
     debugLog(`Finding empty row in sheet: ${sheetTitle}`);
 
-    // A列（No）とB-E列を取得
+    // 新フォーマット（社員コード行追加後）はデータ行が8〜27行目（合計はC28）。
+    // 旧フォーマットのシートはデータ行が7〜26行目（合計はC27）。
+    // 範囲を27行目まで取得することで新旧どちらのシートも探索可能（合計行のラベルはA列、
+    // データ判定はB〜E列で行うため、合計行を空き行として誤検出しない）。
     const [noResponse, dataResponse] = await Promise.all([
       this.sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: `'${sheetTitle}'!A2:A26`
+        range: `'${sheetTitle}'!A2:A27`
       }),
       this.sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: `'${sheetTitle}'!B2:E26`
+        range: `'${sheetTitle}'!B2:E27`
       })
     ]);
 
     const noValues = noResponse.data.values || [];
     const dataValues = dataResponse.data.values || [];
 
-    // 2行目から26行目まで検索
-    for (let i = 0; i < 25; i++) {
+    // 2行目から27行目まで検索
+    for (let i = 0; i < 26; i++) {
       // A列にNoが入力済みで、B-E列が空の行を探す
       const hasNo = noValues[i]?.[0];
       const row = dataValues[i] || [];
@@ -296,14 +299,16 @@ class SheetsService {
       const sheet = await this.getOrCreateSheet(userId, yearMonth);
 
       // データを取得（合計金額を含む）
+      // 新フォーマットはデータ行8〜27・合計C28。旧フォーマット（合計C27）のシートでは
+      // C28が空になるため、後段のフォールバック（明細合算）で正しい合計を算出する。
       const [entriesResponse, totalResponse] = await Promise.all([
         this.sheets.spreadsheets.values.get({
           spreadsheetId,
-          range: `'${sheet.title}'!B2:C26`
+          range: `'${sheet.title}'!B2:C27`
         }),
         this.sheets.spreadsheets.values.get({
           spreadsheetId,
-          range: `'${sheet.title}'!C27`
+          range: `'${sheet.title}'!C28`
         })
       ]);
 
@@ -316,7 +321,7 @@ class SheetsService {
         }))
         .filter(entry => !isNaN(entry.amount));
 
-      // C27から合計金額を取得、取得できない場合は明細から計算
+      // C28から合計金額を取得、取得できない場合は明細から計算
       const total = totalResponse.data.values?.[0]?.[0]
         ? this.parseAmount(totalResponse.data.values[0][0])
         : entries.reduce((sum, entry) => sum + entry.amount, 0);
@@ -354,14 +359,16 @@ class SheetsService {
       debugLog(`Using sheet: ${sheet.title}`);
 
       // データを取得（明細と合計金額）
+      // 新フォーマットはデータ行8〜27・合計C28。旧フォーマット（合計C27）のシートでは
+      // C28が空になるため、後段のフォールバック（明細合算）で正しい合計を算出する。
       const [entriesResponse, totalResponse] = await Promise.all([
         this.sheets.spreadsheets.values.get({
           spreadsheetId,
-          range: `'${sheet.title}'!B2:D26`
+          range: `'${sheet.title}'!B2:D27`
         }),
         this.sheets.spreadsheets.values.get({
           spreadsheetId,
-          range: `'${sheet.title}'!C27`
+          range: `'${sheet.title}'!C28`
         })
       ]);
 
@@ -375,7 +382,7 @@ class SheetsService {
         }))
         .filter(entry => !isNaN(entry.amount));
 
-      // C27から合計金額を取得、取得できない場合は明細から計算
+      // C28から合計金額を取得、取得できない場合は明細から計算
       const total = totalResponse.data.values?.[0]?.[0]
         ? this.parseAmount(totalResponse.data.values[0][0])
         : entries.reduce((sum, entry) => sum + entry.amount, 0);
